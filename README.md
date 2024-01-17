@@ -5,3 +5,4 @@ edge tts lib for go.
 
 ## refer
 + https://github.com/rany2/edge-tts
++ [edge tts api](https://gist.github.com/czyt/a2d83de838c9b65ab14fc18136f53bc6)
