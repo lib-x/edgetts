@@ -3,6 +3,7 @@ package validate
 import (
 	"errors"
 	"fmt"
+	"github.com/lib-x/edgetts/internal/businessConsts"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"regexp"
 	"strings"
@@ -27,7 +28,7 @@ func WithCommunicateOption(c *communicateOption.CommunicateOption) error {
 		lang := voiceParsed[0]
 		region := voiceParsed[1]
 		name := voiceParsed[2]
-		c.Voice = fmt.Sprintf(voiceNameTemplate, lang, region, name)
+		c.Voice = fmt.Sprintf(businessConsts.VoiceNameTemplate, lang, region, name)
 	} else {
 		return InvalidVoiceError
 	}

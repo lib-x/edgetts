@@ -5,7 +5,7 @@ import (
 	"github.com/lib-x/edgetts/internal/communicate"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"github.com/lib-x/edgetts/internal/ttsTask"
-	"github.com/lib-x/edgetts/internal/voiceList"
+	"github.com/lib-x/edgetts/internal/voiceMgmt"
 	"io"
 	"sync"
 )
@@ -30,8 +30,8 @@ func NewSpeech(options ...communicateOption.Option) (*Speech, error) {
 }
 
 // GetVoiceList  get the list of voices.
-func (s *Speech) GetVoiceList() ([]voiceList.Voice, error) {
-	return voiceList.ListVoices()
+func (s *Speech) GetVoiceList() ([]voiceMgmt.Voice, error) {
+	return voiceMgmt.ListVoices()
 }
 
 // AddSingleTask add a single task to speech.

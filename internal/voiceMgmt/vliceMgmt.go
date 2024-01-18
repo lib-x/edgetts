@@ -1,8 +1,8 @@
-package voiceList
+package voiceMgmt
 
 import (
 	"encoding/json"
-	"github.com/lib-x/edgetts/internal/contsants"
+	"github.com/lib-x/edgetts/internal/businessConsts"
 	"net/http"
 )
 
@@ -24,7 +24,7 @@ type VoiceTag struct {
 
 func ListVoices() ([]Voice, error) {
 	client := http.Client{}
-	req, err := http.NewRequest("GET", contsants.VoiceListEndpoint, nil)
+	req, err := http.NewRequest("GET", businessConsts.VoiceListEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}

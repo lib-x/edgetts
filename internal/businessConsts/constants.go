@@ -1,6 +1,4 @@
-package contsants
-
-type MessageType int
+package businessConsts
 
 const (
 	trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
