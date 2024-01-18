@@ -2,14 +2,18 @@ package communicate
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"github.com/lib-x/edgetts/internal/validate"
+	"golang.org/x/net/proxy"
 	"html"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -30,19 +34,23 @@ var (
 )
 
 type Communicate struct {
-	Text            string
-	Voice           string
-	VoiceLangRegion string
-	Rate            string
-	Volume          string
-	Proxy           string
-	op              chan map[string]interface{}
+	text                string
+	voice               string
+	voiceLanguageRegion string
+	rate                string
+	volume              string
+
+	httpProxy        string
+	socket5Proxy     string
+	socket5ProxyUser string
+	socket5ProxyPass string
+	op               chan map[string]interface{}
 
 	AudioDataIndex int
 }
 
 type TextEntry struct {
-	Text         string `json:"Text"`
+	Text         string `json:"text"`
 	Length       int64  `json:"Length"`
 	BoundaryType string `json:"BoundaryType"`
 }
@@ -87,13 +95,49 @@ func NewCommunicate(text string, options ...communicateOption.Option) (*Communic
 		return nil, err
 	}
 	return &Communicate{
-		Text:            text,
-		Voice:           opts.Voice,
-		VoiceLangRegion: opts.VoiceLangRegion,
-		Rate:            opts.Rate,
-		Volume:          opts.Volume,
-		Proxy:           opts.Proxy,
+		text:                text,
+		voice:               opts.Voice,
+		voiceLanguageRegion: opts.VoiceLangRegion,
+		rate:                opts.Rate,
+		volume:              opts.Volume,
+		httpProxy:           opts.HttpProxy,
+		socket5Proxy:        opts.Socket5Proxy,
+		socket5ProxyUser:    opts.Socket5ProxyUser,
+		socket5ProxyPass:    opts.Socket5ProxyPass,
 	}, nil
+}
+
+// WriteStreamTo  write audio stream to io.WriteCloser
+func (c *Communicate) WriteStreamTo(rc io.WriteCloser) error {
+	op, err := c.stream()
+	if err != nil {
+		return err
+	}
+	solveCount := 0
+	audioData := make([][][]byte, c.AudioDataIndex)
+	for i := range op {
+		if _, ok := i["end"]; ok {
+			solveCount++
+			if solveCount == c.AudioDataIndex {
+				break
+			}
+		}
+		t, ok := i["type"]
+		if ok && t == "audio" {
+			data := i["data"].(AudioData)
+			audioData[data.Index] = append(audioData[data.Index], data.Data)
+		}
+		e, ok := i["error"]
+		if ok {
+			fmt.Printf("has error err: %v\n", e)
+		}
+	}
+	for _, v := range audioData {
+		for _, data := range v {
+			rc.Write(data)
+		}
+	}
+	return nil
 }
 
 func (c *Communicate) CloseOutput() {
@@ -111,10 +155,10 @@ func (c *Communicate) makeHeaders() http.Header {
 	return headers
 }
 
-func (c *Communicate) Stream() (<-chan map[string]interface{}, error) {
+func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	texts := splitTextByByteLength(
-		escape(removeIncompatibleCharacters(c.Text)),
-		calculateMaxMessageSize(c.Voice, c.Rate, c.Volume),
+		escape(removeIncompatibleCharacters(c.text)),
+		calculateMaxMessageSize(c.voice, c.rate, c.volume),
 	)
 	c.AudioDataIndex = len(texts)
 
@@ -127,14 +171,30 @@ func (c *Communicate) Stream() (<-chan map[string]interface{}, error) {
 	for idx, text := range texts {
 		wsURL := edgeWssEndpoint + "&ConnectionId=" + generateConnectID()
 		dialer := websocket.Dialer{}
-		if c.Proxy != "" {
-			proxyUrl, err := url.Parse(c.Proxy)
+		// http proxy
+		if c.httpProxy != "" {
+			proxyUrl, err := url.Parse(c.httpProxy)
 			if err != nil {
 				log.Println("proxy url parse error", err)
 			} else {
 				dialer.Proxy = http.ProxyURL(proxyUrl)
 			}
 		}
+		// socket5 proxy
+		if c.socket5Proxy != "" {
+			var auth *proxy.Auth
+			if c.socket5ProxyUser != "" || c.socket5ProxyPass != "" {
+				auth = &proxy.Auth{User: c.socket5ProxyUser, Password: c.socket5ProxyPass}
+			}
+			socket5ProxyDialer, err := proxy.SOCKS5("tcp", c.socket5Proxy, auth, proxy.Direct)
+			if err == nil {
+				dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+					return socket5ProxyDialer.Dial(network, address)
+				}
+				dialer.NetDialContext = dialContext
+			}
+		}
+
 		conn, _, err := dialer.Dial(wsURL, c.makeHeaders())
 		if err != nil {
 			return nil, err
@@ -178,7 +238,7 @@ func (c *Communicate) Stream() (<-chan map[string]interface{}, error) {
 			ssmlHeadersAppendExtraData(
 				generateConnectID(),
 				date,
-				makeSsml(string(text), c.Voice, c.Rate, c.Volume),
+				makeSsml(string(text), c.voice, c.rate, c.volume),
 			),
 		))
 		if err != nil {

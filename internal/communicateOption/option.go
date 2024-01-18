@@ -1,11 +1,14 @@
 package communicateOption
 
 type CommunicateOption struct {
-	Voice           string
-	VoiceLangRegion string
-	Rate            string
-	Volume          string
-	Proxy           string
+	Voice            string
+	VoiceLangRegion  string
+	Rate             string
+	Volume           string
+	HttpProxy        string
+	Socket5Proxy     string
+	Socket5ProxyUser string
+	Socket5ProxyPass string
 }
 
 func (c *CommunicateOption) ApplyDefaultOption() {
@@ -50,8 +53,16 @@ func WithVolume(volume string) Option {
 	}
 }
 
-func WithProxy(proxy string) Option {
+func WithHttpProxy(proxy string) Option {
 	return func(option *CommunicateOption) {
-		option.Proxy = proxy
+		option.HttpProxy = proxy
+	}
+}
+
+func WithSocket5Proxy(proxy, userName, password string) Option {
+	return func(option *CommunicateOption) {
+		option.Socket5Proxy = proxy
+		option.Socket5ProxyUser = userName
+		option.Socket5ProxyPass = password
 	}
 }
