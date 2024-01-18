@@ -29,6 +29,7 @@ type PackTask struct {
 func (p *PackTask) Start(wg *sync.WaitGroup) error {
 	defer wg.Done()
 	for _, entry := range p.PackEntries {
+		// for zip file, the entry should be written after creation.
 		c, err := communicate.NewCommunicate(entry.Text, p.CommunicateOpt...)
 		if err != nil {
 			log.Printf("create communicate error:%v \r\n", err)

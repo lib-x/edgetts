@@ -2,12 +2,13 @@ package edgetts
 
 import (
 	"archive/zip"
+	"github.com/lib-x/edgetts/internal/communicateOption"
 	"os"
 	"testing"
 )
 
 func TestSpeech_StartTasks(t *testing.T) {
-	speech, err := NewSpeech()
+	speech, err := NewSpeech(communicateOption.WithVoice("zh-CN-YunxiaNeural"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,4 +48,18 @@ func TestSpeech_StartTasksToZip(t *testing.T) {
 	speech.StartTasks()
 	zipWriter.Flush()
 
+}
+
+func TestSpeech_GetVoiceList(t *testing.T) {
+	speech, err := NewSpeech()
+	if err != nil {
+		t.Fatal(err)
+	}
+	voices, err := speech.GetVoiceList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, voice := range voices {
+		t.Logf("voice: %+v", voice)
+	}
 }

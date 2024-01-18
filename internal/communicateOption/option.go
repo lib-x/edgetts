@@ -1,5 +1,7 @@
 package communicateOption
 
+import "github.com/lib-x/edgetts/internal/contsants"
+
 type CommunicateOption struct {
 	Voice            string
 	VoiceLangRegion  string
@@ -14,8 +16,8 @@ type CommunicateOption struct {
 func (c *CommunicateOption) ApplyDefaultOption() {
 	// Default values
 	if c.Voice == "" {
-		c.Voice = defaultVoice
-		c.VoiceLangRegion = defaultVoice
+		c.Voice = contsants.DefaultVoice
+		c.VoiceLangRegion = contsants.DefaultVoice
 	}
 	if c.Rate == "" {
 		c.Rate = "+0%"

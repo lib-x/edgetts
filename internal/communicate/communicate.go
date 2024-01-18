@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lib-x/edgetts/internal/communicateOption"
+	"github.com/lib-x/edgetts/internal/contsants"
 	"github.com/lib-x/edgetts/internal/validate"
 	"golang.org/x/net/proxy"
 	"html"
@@ -169,7 +170,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	output := make(chan map[string]interface{})
 
 	for idx, text := range texts {
-		wsURL := edgeWssEndpoint + "&ConnectionId=" + generateConnectID()
+		wsURL := contsants.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
 		dialer := websocket.Dialer{}
 		// http proxy
 		if c.httpProxy != "" {
