@@ -21,7 +21,7 @@ func NewSpeech(options ...communicateOption.Option) (*Speech, error) {
 	return s, nil
 }
 
-func (s *Speech) AddTask(text string, output io.WriteCloser) error {
+func (s *Speech) AddTask(text string, output io.Writer) error {
 	c, err := communicate.NewCommunicate(text, s.options...)
 	if err != nil {
 		return err
