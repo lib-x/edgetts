@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-type TTSTask struct {
+type SingleTask struct {
 	// Text to be synthesized
 	Text string
 	// Communicate
@@ -16,7 +16,7 @@ type TTSTask struct {
 	Output io.Writer
 }
 
-func (t *TTSTask) Start(wg *sync.WaitGroup) error {
+func (t *SingleTask) Start(wg *sync.WaitGroup) error {
 	defer wg.Done()
 	if err := t.Communicate.WriteStreamTo(t.Output); err != nil {
 		return err
