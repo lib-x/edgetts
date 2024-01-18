@@ -1,8 +1,9 @@
-package edgetts
+package validate
 
 import (
 	"errors"
 	"fmt"
+	"github.com/lib-x/edgetts/internal/communicateOption"
 	"regexp"
 	"strings"
 )
@@ -18,8 +19,9 @@ var (
 	InvalidVolumeError = errors.New("invalid volume")
 )
 
-func validate(c *communicateOption) error {
-	// Validate voice
+// ValidateCommunicateOptions validate CommunicateOptions
+func ValidateCommunicateOptions(c *communicateOption.CommunicateOption) error {
+	// ValidateCommunicateOptions voice
 	if validVoicePattern.MatchString(c.Voice) {
 		voiceParsed := strings.Split(c.Voice, "-")
 		lang := voiceParsed[0]
@@ -30,13 +32,13 @@ func validate(c *communicateOption) error {
 		return InvalidVoiceError
 	}
 
-	// Validate rate
+	// ValidateCommunicateOptions rate
 
 	if !validRateVolumePattern.MatchString(c.Rate) {
 		return InvalidRateError
 	}
 
-	// Validate volume
+	// ValidateCommunicateOptions volume
 	if !validRateVolumePattern.MatchString(c.Volume) {
 		return InvalidVolumeError
 	}

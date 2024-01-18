@@ -1,6 +1,6 @@
-package edgetts
+package communicateOption
 
-type communicateOption struct {
+type CommunicateOption struct {
 	Voice           string
 	VoiceLangRegion string
 	Rate            string
@@ -8,7 +8,7 @@ type communicateOption struct {
 	Proxy           string
 }
 
-func (c *communicateOption) applyDefaultOption() {
+func (c *CommunicateOption) ApplyDefaultOption() {
 	// Default values
 	if c.Voice == "" {
 		c.Voice = defaultVoice
@@ -23,35 +23,35 @@ func (c *communicateOption) applyDefaultOption() {
 
 }
 
-type Option func(*communicateOption)
+type Option func(*CommunicateOption)
 
 func WithVoice(voice string) Option {
-	return func(option *communicateOption) {
+	return func(option *CommunicateOption) {
 		option.Voice = voice
 	}
 }
 
 func WithVoiceLangRegion(voiceLangRegion string) Option {
-	return func(option *communicateOption) {
+	return func(option *CommunicateOption) {
 		option.VoiceLangRegion = voiceLangRegion
 	}
 
 }
 
 func WithRate(rate string) Option {
-	return func(option *communicateOption) {
+	return func(option *CommunicateOption) {
 		option.Rate = rate
 	}
 }
 
 func WithVolume(volume string) Option {
-	return func(option *communicateOption) {
+	return func(option *CommunicateOption) {
 		option.Volume = volume
 	}
 }
 
 func WithProxy(proxy string) Option {
-	return func(option *communicateOption) {
+	return func(option *CommunicateOption) {
 		option.Proxy = proxy
 	}
 }

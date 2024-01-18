@@ -1,4 +1,4 @@
-package edgetts
+package communicate
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lib-x/edgetts/internal/communicateOption"
+	"github.com/lib-x/edgetts/internal/validate"
 	"html"
 	"log"
 	"net/http"
@@ -74,14 +76,14 @@ type WebSocketError struct {
 	Message string
 }
 
-func NewCommunicate(text string, options ...Option) (*Communicate, error) {
-	opts := &communicateOption{}
+func NewCommunicate(text string, options ...communicateOption.Option) (*Communicate, error) {
+	opts := &communicateOption.CommunicateOption{}
 	for _, optFn := range options {
 		optFn(opts)
 	}
-	opts.applyDefaultOption()
+	opts.ApplyDefaultOption()
 
-	if err := validate(opts); err != nil {
+	if err := validate.ValidateCommunicateOptions(opts); err != nil {
 		return nil, err
 	}
 	return &Communicate{
@@ -188,7 +190,7 @@ func (c *Communicate) Stream() (<-chan map[string]interface{}, error) {
 			defer conn.Close()
 			defer func() {
 				if err := recover(); err != nil {
-					fmt.Printf("Communicate.Stream recovered from panic: %v stack: %s", err, string(debug.Stack()))
+					fmt.Printf("communicate.Stream recovered from panic: %v stack: %s", err, string(debug.Stack()))
 				}
 			}()
 
