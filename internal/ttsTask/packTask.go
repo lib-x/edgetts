@@ -1,6 +1,7 @@
 package ttsTask
 
 import (
+	"encoding/json"
 	"github.com/lib-x/edgetts/internal/communicate"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"io"
@@ -24,6 +25,8 @@ type PackTask struct {
 	PackEntries []*PackEntry
 	// Output
 	Output io.Writer
+	// MetaData is the data which will be serialized into a json file,name use the key and value as the key-value pair.
+	MetaData []map[string]any
 }
 
 func (p *PackTask) Start(wg *sync.WaitGroup) error {
@@ -40,6 +43,24 @@ func (p *PackTask) Start(wg *sync.WaitGroup) error {
 		if err != nil {
 			log.Printf("write data to entry writer error:%v \r\n", err)
 			return err
+		}
+	}
+	// after all entries are written, write the meta data into a json file. this process is optional.
+	// so error is ignored.
+
+	if len(p.MetaData) > 0 {
+		for _, metaData := range p.MetaData {
+			for entryName, entryPayload := range metaData {
+				metaEntry, err := p.PackEntryCreator(entryName)
+				if err != nil {
+					log.Printf("create meta entry writer error:%v \r\n", err)
+					continue
+				}
+				if err = json.NewEncoder(metaEntry).Encode(entryPayload); err != nil {
+					log.Printf("write data to meta entry writer error:%v \r\n", err)
+					continue
+				}
+			}
 		}
 	}
 	return nil

@@ -50,7 +50,11 @@ func (s *Speech) AddSingleTask(text string, output io.Writer) error {
 }
 
 // AddPackTask add a pack task to speech.
-func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(name string) (io.Writer, error), output io.Writer) error {
+// dataEntries defines the list of entries to be packed into a file.key is the entry name, value is the entry text to be synthesized.
+// entryCreator defines the function to create a writer for each entry.which can be packer context related writer.such as zip writer.
+// output defines the output of the pack task.which finally will be written into a file.
+// MetaData is the data which will be serialized into a json file,name use the key and value as the key-value pair.
+func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(name string) (io.Writer, error), output io.Writer, metaData ...map[string]any) error {
 	taskCount := len(dataEntries)
 	if taskCount == 0 {
 		return NoPackTaskEntries
@@ -63,13 +67,14 @@ func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(na
 		}
 		packEntries = append(packEntries, packEntry)
 	}
-	packTask := ttsTask.PackTask{
+	packTask := &ttsTask.PackTask{
 		CommunicateOpt:   s.options,
 		PackEntryCreator: entryCreator,
 		PackEntries:      packEntries,
 		Output:           output,
+		MetaData:         metaData,
 	}
-	s.packTasks = append(s.packTasks, &packTask)
+	s.packTasks = append(s.packTasks, packTask)
 	return nil
 }
 
