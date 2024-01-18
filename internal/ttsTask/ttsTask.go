@@ -3,6 +3,7 @@ package ttsTask
 import (
 	"github.com/lib-x/edgetts/internal/communicate"
 	"io"
+	"log"
 	"sync"
 )
 
@@ -12,7 +13,7 @@ type TTSTask struct {
 	// Communicate
 	Communicate *communicate.Communicate
 	// Output
-	Output io.WriteCloser
+	Output io.Writer
 }
 
 func (t *TTSTask) Start(wg *sync.WaitGroup) error {
@@ -20,6 +21,9 @@ func (t *TTSTask) Start(wg *sync.WaitGroup) error {
 	if err := t.Communicate.WriteStreamTo(t.Output); err != nil {
 		return err
 	}
-	t.Output.Close()
+	if closer, ok := t.Output.(io.Closer); ok {
+		log.Print("ttsTask.Start: close output writer\r\n")
+		closer.Close()
+	}
 	return nil
 }

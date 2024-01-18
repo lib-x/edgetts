@@ -108,7 +108,7 @@ func NewCommunicate(text string, options ...communicateOption.Option) (*Communic
 }
 
 // WriteStreamTo  write audio stream to io.WriteCloser
-func (c *Communicate) WriteStreamTo(rc io.WriteCloser) error {
+func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 	op, err := c.stream()
 	if err != nil {
 		return err
