@@ -19,26 +19,26 @@ var (
 	InvalidVolumeError = errors.New("invalid volume")
 )
 
-// ValidateCommunicateOptions validate CommunicateOptions
-func ValidateCommunicateOptions(c *communicateOption.CommunicateOption) error {
-	// ValidateCommunicateOptions voice
+// WithCommunicateOption validate With a CommunicateOption
+func WithCommunicateOption(c *communicateOption.CommunicateOption) error {
+	// WithCommunicateOption voice
 	if validVoicePattern.MatchString(c.Voice) {
 		voiceParsed := strings.Split(c.Voice, "-")
 		lang := voiceParsed[0]
 		region := voiceParsed[1]
 		name := voiceParsed[2]
-		c.Voice = fmt.Sprintf("Microsoft Server Speech Text to Speech Voice (%s-%s, %s)", lang, region, name)
+		c.Voice = fmt.Sprintf(voiceNameTemplate, lang, region, name)
 	} else {
 		return InvalidVoiceError
 	}
 
-	// ValidateCommunicateOptions rate
+	// WithCommunicateOption rate
 
 	if !validRateVolumePattern.MatchString(c.Rate) {
 		return InvalidRateError
 	}
 
-	// ValidateCommunicateOptions volume
+	// WithCommunicateOption volume
 	if !validRateVolumePattern.MatchString(c.Volume) {
 		return InvalidVolumeError
 	}

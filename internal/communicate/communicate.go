@@ -83,7 +83,7 @@ func NewCommunicate(text string, options ...communicateOption.Option) (*Communic
 	}
 	opts.ApplyDefaultOption()
 
-	if err := validate.ValidateCommunicateOptions(opts); err != nil {
+	if err := validate.WithCommunicateOption(opts); err != nil {
 		return nil, err
 	}
 	return &Communicate{
