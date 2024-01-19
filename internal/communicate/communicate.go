@@ -93,26 +93,25 @@ type webSocketError struct {
 	Message string
 }
 
-func NewCommunicate(text string, options ...communicateOption.Option) (*Communicate, error) {
-	opts := &communicateOption.CommunicateOption{}
-	for _, optFn := range options {
-		optFn(opts)
+func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Communicate, error) {
+	if opt == nil {
+		opt = &communicateOption.CommunicateOption{}
 	}
-	opts.ApplyDefaultOption()
+	opt.CheckAndApplyDefaultOption()
 
-	if err := validate.WithCommunicateOption(opts); err != nil {
+	if err := validate.WithCommunicateOption(opt); err != nil {
 		return nil, err
 	}
 	return &Communicate{
 		text:                text,
-		voice:               opts.Voice,
-		voiceLanguageRegion: opts.VoiceLangRegion,
-		rate:                opts.Rate,
-		volume:              opts.Volume,
-		httpProxy:           opts.HttpProxy,
-		socket5Proxy:        opts.Socket5Proxy,
-		socket5ProxyUser:    opts.Socket5ProxyUser,
-		socket5ProxyPass:    opts.Socket5ProxyPass,
+		voice:               opt.Voice,
+		voiceLanguageRegion: opt.VoiceLangRegion,
+		rate:                opt.Rate,
+		volume:              opt.Volume,
+		httpProxy:           opt.HttpProxy,
+		socket5Proxy:        opt.Socket5Proxy,
+		socket5ProxyUser:    opt.Socket5ProxyUser,
+		socket5ProxyPass:    opt.Socket5ProxyPass,
 	}, nil
 }
 

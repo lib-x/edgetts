@@ -2,13 +2,12 @@ package edgetts
 
 import (
 	"archive/zip"
-	"github.com/lib-x/edgetts/internal/communicateOption"
 	"os"
 	"testing"
 )
 
 func TestSpeech_StartTasks(t *testing.T) {
-	speech, err := NewSpeech(communicateOption.WithVoice("zh-CN-YunxiaNeural"))
+	speech, err := NewSpeech(WithVoice("zh-CN-YunxiaNeural"))
 	if err != nil {
 		t.Fatal(err)
 	}

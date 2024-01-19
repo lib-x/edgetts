@@ -16,16 +16,25 @@ var (
 
 type Speech struct {
 	vm        *voiceMgmt.VoiceManager
-	options   []communicateOption.Option
+	options   []Option
 	tasks     []*ttsTask.SingleTask
 	packTasks []*ttsTask.PackTask
+}
+
+func (s *Speech) convertToInternalOpt() *communicateOption.CommunicateOption {
+	opt := &option{}
+	for _, apply := range s.options {
+		apply(opt)
+	}
+	return opt.toInternalOption()
+
 }
 
 // NewSpeech creates a new Speech instance.
 // It takes a variadic parameter:
 // - options: a slice of communicateOption.Option that will be used to configure the Speech instance.
 // The function returns a pointer to the newly created Speech instance and an error if any occurs during the creation process.
-func NewSpeech(options ...communicateOption.Option) (*Speech, error) {
+func NewSpeech(options ...Option) (*Speech, error) {
 	s := &Speech{
 		options:   options,
 		tasks:     make([]*ttsTask.SingleTask, 0),
@@ -47,7 +56,8 @@ func (s *Speech) GetVoiceList() ([]voiceMgmt.Voice, error) {
 // - output: the output of the single task, which will finally be written into a file.
 // The function returns an error if there is an issue with the communication.
 func (s *Speech) AddSingleTask(text string, output io.Writer) error {
-	c, err := communicate.NewCommunicate(text, s.options...)
+	opt := s.convertToInternalOpt()
+	c, err := communicate.NewCommunicate(text, opt)
 	if err != nil {
 		return err
 	}
@@ -80,8 +90,9 @@ func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(na
 		}
 		packEntries = append(packEntries, packEntry)
 	}
+
 	packTask := &ttsTask.PackTask{
-		CommunicateOpt:   s.options,
+		CommunicateOpt:   s.convertToInternalOpt(),
 		PackEntryCreator: entryCreator,
 		PackEntries:      packEntries,
 		Output:           output,

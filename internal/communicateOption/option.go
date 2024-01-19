@@ -13,7 +13,7 @@ type CommunicateOption struct {
 	Socket5ProxyPass string
 }
 
-func (c *CommunicateOption) ApplyDefaultOption() {
+func (c *CommunicateOption) CheckAndApplyDefaultOption() {
 	// Default values
 	if c.Voice == "" {
 		c.Voice = businessConsts.DefaultVoice
@@ -26,45 +26,4 @@ func (c *CommunicateOption) ApplyDefaultOption() {
 		c.Volume = "+0%"
 	}
 
-}
-
-type Option func(*CommunicateOption)
-
-func WithVoice(voice string) Option {
-	return func(option *CommunicateOption) {
-		option.Voice = voice
-	}
-}
-
-func WithVoiceLangRegion(voiceLangRegion string) Option {
-	return func(option *CommunicateOption) {
-		option.VoiceLangRegion = voiceLangRegion
-	}
-
-}
-
-func WithRate(rate string) Option {
-	return func(option *CommunicateOption) {
-		option.Rate = rate
-	}
-}
-
-func WithVolume(volume string) Option {
-	return func(option *CommunicateOption) {
-		option.Volume = volume
-	}
-}
-
-func WithHttpProxy(proxy string) Option {
-	return func(option *CommunicateOption) {
-		option.HttpProxy = proxy
-	}
-}
-
-func WithSocket5Proxy(proxy, userName, password string) Option {
-	return func(option *CommunicateOption) {
-		option.Socket5Proxy = proxy
-		option.Socket5ProxyUser = userName
-		option.Socket5ProxyPass = password
-	}
 }
