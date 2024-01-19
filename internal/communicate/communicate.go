@@ -58,38 +58,38 @@ type Communicate struct {
 	AudioDataIndex int
 }
 
-type TextEntry struct {
+type textEntry struct {
 	Text         string `json:"text"`
 	Length       int64  `json:"Length"`
 	BoundaryType string `json:"BoundaryType"`
 }
-type DataEntry struct {
+type dataEntry struct {
 	Offset   int       `json:"Offset"`
 	Duration int       `json:"Duration"`
-	Text     TextEntry `json:"text"`
+	Text     textEntry `json:"text"`
 }
-type MetaDataEntry struct {
+type metaDataEntry struct {
 	Type string    `json:"Type"`
-	Data DataEntry `json:"Data"`
+	Data dataEntry `json:"Data"`
 }
-type AudioData struct {
+type audioData struct {
 	Data  []byte
 	Index int
 }
 
-type UnknownResponse struct {
+type unknownResponse struct {
 	Message string
 }
 
-type UnexpectedResponse struct {
+type unexpectedResponse struct {
 	Message string
 }
 
-type NoAudioReceived struct {
+type noAudioReceived struct {
 	Message string
 }
 
-type WebSocketError struct {
+type webSocketError struct {
 	Message string
 }
 
@@ -122,23 +122,23 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 	if err != nil {
 		return err
 	}
-	audioData := make([][][]byte, c.AudioDataIndex)
+	audioBinaryData := make([][][]byte, c.AudioDataIndex)
 	for i := range op {
 		if _, ok := i["end"]; ok {
-			if len(audioData) == c.AudioDataIndex {
+			if len(audioBinaryData) == c.AudioDataIndex {
 				break
 			}
 		}
 		if t, ok := i["type"]; ok && t == "audio" {
-			data := i["data"].(AudioData)
-			audioData[data.Index] = append(audioData[data.Index], data.Data)
+			data := i["data"].(audioData)
+			audioBinaryData[data.Index] = append(audioBinaryData[data.Index], data.Data)
 		}
 		if e, ok := i["error"]; ok {
 			fmt.Printf("has error err: %v\n", e)
 		}
 	}
 
-	for _, dataSlice := range audioData {
+	for _, dataSlice := range audioBinaryData {
 		for _, data := range dataSlice {
 			rc.Write(data)
 		}
@@ -177,7 +177,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	for idx, text := range texts {
 		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
 		dialer := websocket.Dialer{}
-		setupProxy(&dialer, c)
+		setupWebSocketProxy(&dialer, c)
 
 		conn, _, err := dialer.Dial(wsURL, communicateHeader)
 		if err != nil {
@@ -244,7 +244,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						// WebSocket error
 						output <- map[string]interface{}{
-							"error": WebSocketError{Message: err.Error()},
+							"error": webSocketError{Message: err.Error()},
 						}
 					}
 					break
@@ -268,7 +268,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 						metadata, err := processMetadata(data)
 						if err != nil {
 							output <- map[string]interface{}{
-								"error": UnknownResponse{Message: err.Error()},
+								"error": unknownResponse{Message: err.Error()},
 							}
 							break
 						}
@@ -276,7 +276,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 						for _, metaObj := range metadata {
 							metaType := metaObj.Type
 							if idx != prevIdx {
-								shiftTime = sum(idx, finalUtterance)
+								shiftTime = sumWithMap(idx, finalUtterance)
 								prevIdx = idx
 							}
 							switch metaType {
@@ -292,7 +292,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 								// do nothing
 							default:
 								output <- map[string]interface{}{
-									"error": UnknownResponse{Message: "Unknown metadata type: " + metaType},
+									"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
 								}
 								break
 							}
@@ -301,35 +301,35 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 						// do nothing
 					default:
 						output <- map[string]interface{}{
-							"error": UnknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
+							"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
 						}
 						break
 					}
 				case websocket.BinaryMessage:
 					if !downloadAudio {
 						output <- map[string]interface{}{
-							"error": UnknownResponse{"We received a binary message, but we are not expecting one."},
+							"error": unknownResponse{"We received a binary message, but we are not expecting one."},
 						}
 					}
 
 					if len(message) < 2 {
 						output <- map[string]interface{}{
-							"error": UnknownResponse{"We received a binary message, but it is missing the header length."},
+							"error": unknownResponse{"We received a binary message, but it is missing the header length."},
 						}
 					}
 
 					headerLength := int(binary.BigEndian.Uint16(message[:2]))
 					if len(message) < headerLength+2 {
 						output <- map[string]interface{}{
-							"error": UnknownResponse{"We received a binary message, but it is missing the audio data."},
+							"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
 						}
 					}
 
-					audioData := message[headerLength+2:]
+					audioBinaryData := message[headerLength+2:]
 					output <- map[string]interface{}{
 						"type": "audio",
-						"data": AudioData{
-							Data:  audioData,
+						"data": audioData{
+							Data:  audioBinaryData,
 							Index: idx,
 						},
 					}
@@ -337,13 +337,13 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 				default:
 					if message != nil {
 						output <- map[string]interface{}{
-							"error": WebSocketError{
+							"error": webSocketError{
 								Message: string(message),
 							},
 						}
 					} else {
 						output <- map[string]interface{}{
-							"error": WebSocketError{
+							"error": webSocketError{
 								Message: "Unknown error",
 							},
 						}
@@ -353,7 +353,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 			}
 			if !audioWasReceived {
 				output <- map[string]interface{}{
-					"error": NoAudioReceived{Message: "No audio was received. Please verify that your parameters are correct."},
+					"error": noAudioReceived{Message: "No audio was received. Please verify that your parameters are correct."},
 				}
 			}
 		}(conn, idx)
@@ -362,16 +362,15 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	return output, nil
 }
 
-func sum(idx int, m map[int]int) int {
-	sum := 0
+func sumWithMap(idx int, m map[int]int) int {
+	sumResult := 0
 	for i := 0; i < idx; i++ {
-		sum += m[i]
+		sumResult += m[i]
 	}
-	return sum
-
+	return sumResult
 }
 
-func setupProxy(dialer *websocket.Dialer, c *Communicate) {
+func setupWebSocketProxy(dialer *websocket.Dialer, c *Communicate) {
 	if c.httpProxy != "" {
 		proxyUrl, _ := url.Parse(c.httpProxy)
 		dialer.Proxy = http.ProxyURL(proxyUrl)
@@ -386,9 +385,9 @@ func setupProxy(dialer *websocket.Dialer, c *Communicate) {
 	}
 }
 
-func processMetadata(data []byte) ([]MetaDataEntry, error) {
+func processMetadata(data []byte) ([]metaDataEntry, error) {
 	var metadata struct {
-		Metadata []MetaDataEntry `json:"Metadata"`
+		Metadata []metaDataEntry `json:"Metadata"`
 	}
 	err := json.Unmarshal(data, &metadata)
 	if err != nil {
@@ -425,6 +424,16 @@ func generateConnectID() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
+// splitTextByByteLength splits the input text into chunks of a specified byte length.
+// The function ensures that the text is not split in the middle of a word. If a word exceeds the specified byte length,
+// the word is placed in the next chunk. The function returns a slice of byte slices, each representing a chunk of the original text.
+//
+// Parameters:
+// text: The input text to be split.
+// byteLength: The maximum byte length for each chunk of text.
+//
+// Returns:
+// A slice of byte slices, each representing a chunk of the original text.
 func splitTextByByteLength(text string, byteLength int) [][]byte {
 	var result [][]byte
 	textBytes := []byte(text)
