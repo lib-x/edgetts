@@ -14,6 +14,8 @@ type PackEntry struct {
 	Text string
 	// Entry name to be packed into a file
 	EntryName string
+	// EntryCommunicateOpt defines the options for communicating with the TTS engine.if note set, use the PackTask's CommunicateOpt.
+	EntryCommunicateOpt *communicateOption.CommunicateOption
 }
 
 type PackTask struct {
@@ -33,7 +35,12 @@ func (p *PackTask) Start(wg *sync.WaitGroup) error {
 	defer wg.Done()
 	for _, entry := range p.PackEntries {
 		// for zip file, the entry should be written after creation.
-		c, err := communicate.NewCommunicate(entry.Text, p.CommunicateOpt)
+		opt := p.CommunicateOpt
+		if entry.EntryCommunicateOpt != nil {
+			opt = entry.EntryCommunicateOpt
+
+		}
+		c, err := communicate.NewCommunicate(entry.Text, opt)
 		if err != nil {
 			log.Printf("create communicate error:%v \r\n", err)
 			continue

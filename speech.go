@@ -75,6 +75,18 @@ func (s *Speech) AddSingleTask(text string, output io.Writer) error {
 // - metaData: optional parameter. It is the data which will be serialized into a json file. The name uses the key and value as the key-value pair.
 // The function returns an error if there are no pack task entries.
 func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(name string) (io.Writer, error), output io.Writer, metaData ...map[string]any) error {
+	return s.AddPackTaskWithCustomOptions(dataEntries, nil, entryCreator, output, metaData...)
+}
+
+// AddPackTaskWithCustomOptions adds a pack task with options to the speech.
+// It takes four parameters:
+// - dataEntries: a map where the key is the entry name and the value is the entry text to be synthesized.
+// - entriesOption: a map where the key is the entry name and the value is the entry option to be used for the entry.
+// - entryCreator: a function that creates a writer for each entry. This can be a packer context related writer, such as a zip writer.
+// - output: the output of the pack task, which will finally be written into a file.
+// - metaData: optional parameter. It is the data which will be serialized into a json file. The name uses the key and value as the key-value pair.
+// The function returns an error if there are no pack task entries.
+func (s *Speech) AddPackTaskWithCustomOptions(dataEntries map[string]string, entriesOption map[string][]Option, entryCreator func(name string) (io.Writer, error), output io.Writer, metaData ...map[string]any) error {
 	taskCount := len(dataEntries)
 	if taskCount == 0 {
 		return NoPackTaskEntries
@@ -84,6 +96,16 @@ func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(na
 		packEntry := &ttsTask.PackEntry{
 			Text:      text,
 			EntryName: name,
+		}
+		if entriesOption != nil {
+			if entryOpt, ok := entriesOption[name]; ok {
+				opt := &option{}
+				for _, apply := range entryOpt {
+					apply(opt)
+				}
+				packEntry.EntryCommunicateOpt = opt.toInternalOption()
+			}
+
 		}
 		packEntries = append(packEntries, packEntry)
 	}
