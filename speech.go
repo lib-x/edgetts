@@ -5,7 +5,6 @@ import (
 	"github.com/lib-x/edgetts/internal/communicate"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"github.com/lib-x/edgetts/internal/ttsTask"
-	"github.com/lib-x/edgetts/internal/voiceMgmt"
 	"io"
 	"sync"
 )
@@ -15,7 +14,7 @@ var (
 )
 
 type Speech struct {
-	vm        *voiceMgmt.VoiceManager
+	vm        *voiceManager
 	options   []Option
 	tasks     []*ttsTask.SingleTask
 	packTasks []*ttsTask.PackTask
@@ -39,14 +38,14 @@ func NewSpeech(options ...Option) (*Speech, error) {
 		options:   options,
 		tasks:     make([]*ttsTask.SingleTask, 0),
 		packTasks: make([]*ttsTask.PackTask, 0),
-		vm:        voiceMgmt.NewVoiceManager(),
+		vm:        newVoiceManager(),
 	}
 	return s, nil
 }
 
 // GetVoiceList retrieves the list of voices available for the speech.
 // It returns a slice of Voice objects and an error if any occurs during the retrieval process.
-func (s *Speech) GetVoiceList() ([]voiceMgmt.Voice, error) {
+func (s *Speech) GetVoiceList() ([]Voice, error) {
 	return s.vm.ListVoices()
 }
 

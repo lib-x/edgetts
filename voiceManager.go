@@ -1,4 +1,4 @@
-package voiceMgmt
+package edgetts
 
 import (
 	"encoding/json"
@@ -28,17 +28,17 @@ type VoiceTag struct {
 	VoicePersonalities []string `json:"VoicePersonalities"`
 }
 
-type VoiceManager struct {
+type voiceManager struct {
 }
 
-func NewVoiceManager() *VoiceManager {
+func newVoiceManager() *voiceManager {
 	headerOnce.Do(func() {
 		getVoiceHeader = makeVoiceListRequestHeader()
 	})
-	return &VoiceManager{}
+	return &voiceManager{}
 }
 
-func (m *VoiceManager) ListVoices() ([]Voice, error) {
+func (m *voiceManager) ListVoices() ([]Voice, error) {
 	client := http.Client{}
 	req, err := http.NewRequest("GET", businessConsts.VoiceListEndpoint, nil)
 	if err != nil {
