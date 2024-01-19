@@ -21,6 +21,10 @@ type Speech struct {
 	packTasks []*ttsTask.PackTask
 }
 
+// NewSpeech creates a new Speech instance.
+// It takes a variadic parameter:
+// - options: a slice of communicateOption.Option that will be used to configure the Speech instance.
+// The function returns a pointer to the newly created Speech instance and an error if any occurs during the creation process.
 func NewSpeech(options ...communicateOption.Option) (*Speech, error) {
 	s := &Speech{
 		options:   options,
@@ -31,12 +35,17 @@ func NewSpeech(options ...communicateOption.Option) (*Speech, error) {
 	return s, nil
 }
 
-// GetVoiceList  get the list of voices.
+// GetVoiceList retrieves the list of voices available for the speech.
+// It returns a slice of Voice objects and an error if any occurs during the retrieval process.
 func (s *Speech) GetVoiceList() ([]voiceMgmt.Voice, error) {
 	return s.vm.ListVoices()
 }
 
-// AddSingleTask add a single task to speech.
+// AddSingleTask adds a single task to the speech.
+// It takes two parameters:
+// - text: the text to be synthesized.
+// - output: the output of the single task, which will finally be written into a file.
+// The function returns an error if there is an issue with the communication.
 func (s *Speech) AddSingleTask(text string, output io.Writer) error {
 	c, err := communicate.NewCommunicate(text, s.options...)
 	if err != nil {
@@ -51,11 +60,13 @@ func (s *Speech) AddSingleTask(text string, output io.Writer) error {
 	return nil
 }
 
-// AddPackTask add a pack task to speech.
-// dataEntries defines the list of entries to be packed into a file.key is the entry name, value is the entry text to be synthesized.
-// entryCreator defines the function to create a writer for each entry.which can be packer context related writer.such as zip writer.
-// output defines the output of the pack task.which finally will be written into a file.
-// MetaData is the data which will be serialized into a json file,name use the key and value as the key-value pair.
+// AddPackTask adds a pack task to the speech.
+// It takes four parameters:
+// - dataEntries: a map where the key is the entry name and the value is the entry text to be synthesized.
+// - entryCreator: a function that creates a writer for each entry. This can be a packer context related writer, such as a zip writer.
+// - output: the output of the pack task, which will finally be written into a file.
+// - metaData: optional parameter. It is the data which will be serialized into a json file. The name uses the key and value as the key-value pair.
+// The function returns an error if there are no pack task entries.
 func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(name string) (io.Writer, error), output io.Writer, metaData ...map[string]any) error {
 	taskCount := len(dataEntries)
 	if taskCount == 0 {
@@ -80,6 +91,10 @@ func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(na
 	return nil
 }
 
+// StartTasks starts all the tasks in the Speech instance.
+// It creates a WaitGroup and adds the total number of tasks to it.
+// Then it starts each task in a separate goroutine and waits for all of them to finish.
+// The function returns an error if any occurs during the execution of the tasks.
 func (s *Speech) StartTasks() error {
 	wg := &sync.WaitGroup{}
 	wg.Add(len(s.tasks) + len(s.packTasks))
