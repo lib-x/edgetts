@@ -28,17 +28,17 @@ type VoiceTag struct {
 	VoicePersonalities []string `json:"VoicePersonalities"`
 }
 
-type voiceManager struct {
+type VoiceManager struct {
 }
 
-func newVoiceManager() *voiceManager {
+func NewVoiceManager() *VoiceManager {
 	headerOnce.Do(func() {
 		getVoiceHeader = makeVoiceListRequestHeader()
 	})
-	return &voiceManager{}
+	return &VoiceManager{}
 }
 
-func (m *voiceManager) ListVoices() ([]Voice, error) {
+func (m *VoiceManager) ListVoices() ([]Voice, error) {
 	client := http.Client{}
 	req, err := http.NewRequest("GET", businessConsts.VoiceListEndpoint, nil)
 	if err != nil {

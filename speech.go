@@ -14,7 +14,7 @@ var (
 )
 
 type Speech struct {
-	vm        *voiceManager
+	vm        *VoiceManager
 	options   []Option
 	tasks     []*ttsTask.SingleTask
 	packTasks []*ttsTask.PackTask
@@ -38,7 +38,7 @@ func NewSpeech(options ...Option) (*Speech, error) {
 		options:   options,
 		tasks:     make([]*ttsTask.SingleTask, 0),
 		packTasks: make([]*ttsTask.PackTask, 0),
-		vm:        newVoiceManager(),
+		vm:        NewVoiceManager(),
 	}
 	return s, nil
 }
