@@ -7,7 +7,9 @@ import (
 )
 
 func TestSpeech_StartTasks(t *testing.T) {
-	speech, err := NewSpeech(WithVoice("zh-CN-YunxiaNeural"))
+	opts := make([]Option, 0)
+	opts = append(opts, WithVoice("zh-CN-YunxiaNeural"))
+	speech, err := NewSpeech(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +35,9 @@ func TestSpeech_StartTasks(t *testing.T) {
 }
 
 func TestSpeech_StartTasksToZip(t *testing.T) {
-	speech, err := NewSpeech()
+	opts := make([]Option, 0)
+	opts = append(opts, WithVoice("zh-CN-YunxiaNeural"))
+	speech, err := NewSpeech(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
