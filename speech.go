@@ -15,6 +15,7 @@ var (
 )
 
 type Speech struct {
+	vm        *voiceMgmt.VoiceManager
 	options   []communicateOption.Option
 	tasks     []*ttsTask.SingleTask
 	packTasks []*ttsTask.PackTask
@@ -25,13 +26,14 @@ func NewSpeech(options ...communicateOption.Option) (*Speech, error) {
 		options:   options,
 		tasks:     make([]*ttsTask.SingleTask, 0),
 		packTasks: make([]*ttsTask.PackTask, 0),
+		vm:        voiceMgmt.NewVoiceManager(),
 	}
 	return s, nil
 }
 
 // GetVoiceList  get the list of voices.
 func (s *Speech) GetVoiceList() ([]voiceMgmt.Voice, error) {
-	return voiceMgmt.ListVoices()
+	return s.vm.ListVoices()
 }
 
 // AddSingleTask add a single task to speech.

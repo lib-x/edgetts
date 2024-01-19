@@ -16,6 +16,7 @@ type SingleTask struct {
 	Output io.Writer
 }
 
+// Start  start a tts single task
 func (t *SingleTask) Start(wg *sync.WaitGroup) error {
 	defer wg.Done()
 	if err := t.Communicate.WriteStreamTo(t.Output); err != nil {

@@ -4,6 +4,12 @@ import (
 	"encoding/json"
 	"github.com/lib-x/edgetts/internal/businessConsts"
 	"net/http"
+	"sync"
+)
+
+var (
+	getVoiceHeader http.Header
+	headerOnce     = &sync.Once{}
 )
 
 type Voice struct {
@@ -22,23 +28,23 @@ type VoiceTag struct {
 	VoicePersonalities []string `json:"VoicePersonalities"`
 }
 
-func ListVoices() ([]Voice, error) {
+type VoiceManager struct {
+}
+
+func NewVoiceManager() *VoiceManager {
+	headerOnce.Do(func() {
+		getVoiceHeader = makeVoiceListRequestHeader()
+	})
+	return &VoiceManager{}
+}
+
+func (m *VoiceManager) ListVoices() ([]Voice, error) {
 	client := http.Client{}
 	req, err := http.NewRequest("GET", businessConsts.VoiceListEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Authority", "speech.platform.bing.com")
-	req.Header.Set("Sec-CH-UA", `" Not;A Brand";v="99", "Microsoft Edge";v="91", "Chromium";v="91"`)
-	req.Header.Set("Sec-CH-UA-Mobile", "?0")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41")
-	req.Header.Set("Sec-Fetch-Site", "none")
-	req.Header.Set("Sec-Fetch-Mode", "cors")
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header = getVoiceHeader
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -49,4 +55,20 @@ func ListVoices() ([]Voice, error) {
 		return nil, err
 	}
 	return voices, nil
+}
+
+func makeVoiceListRequestHeader() http.Header {
+	header := make(http.Header)
+	header.Set("Content-Type", "application/json")
+	header.Set("Accept", "*/*")
+	header.Set("Authority", "speech.platform.bing.com")
+	header.Set("Sec-CH-UA", `" Not;A Brand";v="99", "Microsoft Edge";v="91", "Chromium";v="91"`)
+	header.Set("Sec-CH-UA-Mobile", "?0")
+	header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41")
+	header.Set("Sec-Fetch-Site", "none")
+	header.Set("Sec-Fetch-Mode", "cors")
+	header.Set("Sec-Fetch-Dest", "empty")
+	header.Set("Accept-Encoding", "gzip, deflate, br")
+	header.Set("Accept-Language", "en-US,en;q=0.9")
+	return header
 }

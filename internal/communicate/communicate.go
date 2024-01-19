@@ -275,9 +275,9 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 					}
 					break
 				}
-
-				if msgType == websocket.TextMessage {
-					parameters, data := getHeadersAndData(message)
+				switch msgType {
+				case websocket.TextMessage:
+					parameters, data := processWebsocketMessage(message)
 					path := parameters["Path"]
 					if path == "turn.start" {
 						downloadAudio = true
@@ -331,7 +331,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 						}
 						break
 					}
-				} else if msgType == websocket.BinaryMessage {
+				case websocket.BinaryMessage:
 					if !downloadAudio {
 						output <- map[string]interface{}{
 							"error": UnknownResponse{"We received a binary message, but we are not expecting one."},
@@ -360,7 +360,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 						},
 					}
 					audioWasReceived = true
-				} else {
+				default:
 					if message != nil {
 						output <- map[string]interface{}{
 							"error": WebSocketError{
@@ -398,7 +398,7 @@ func sum(idx int, m map[int]int) int {
 
 }
 
-func getHeadersAndData(data []byte) (map[string]string, []byte) {
+func processWebsocketMessage(data []byte) (map[string]string, []byte) {
 	headers := make(map[string]string)
 
 	headerEndIndex := bytes.Index(data, []byte("\r\n\r\n"))
