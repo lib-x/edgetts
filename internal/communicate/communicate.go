@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/lib-x/edgetts/internal/businessConsts"
 	"github.com/lib-x/edgetts/internal/communicateOption"
@@ -13,7 +12,6 @@ import (
 	"golang.org/x/net/proxy"
 	"html"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -123,27 +122,24 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 	if err != nil {
 		return err
 	}
-	solveCount := 0
 	audioData := make([][][]byte, c.AudioDataIndex)
 	for i := range op {
 		if _, ok := i["end"]; ok {
-			solveCount++
-			if solveCount == c.AudioDataIndex {
+			if len(audioData) == c.AudioDataIndex {
 				break
 			}
 		}
-		t, ok := i["type"]
-		if ok && t == "audio" {
+		if t, ok := i["type"]; ok && t == "audio" {
 			data := i["data"].(AudioData)
 			audioData[data.Index] = append(audioData[data.Index], data.Data)
 		}
-		e, ok := i["error"]
-		if ok {
+		if e, ok := i["error"]; ok {
 			fmt.Printf("has error err: %v\n", e)
 		}
 	}
-	for _, v := range audioData {
-		for _, data := range v {
+
+	for _, dataSlice := range audioData {
+		for _, data := range dataSlice {
 			rc.Write(data)
 		}
 	}
@@ -181,44 +177,12 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	for idx, text := range texts {
 		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
 		dialer := websocket.Dialer{}
-		// http proxy
-		if c.httpProxy != "" {
-			proxyUrl, err := url.Parse(c.httpProxy)
-			if err != nil {
-				log.Println("proxy url parse error", err)
-			} else {
-				dialer.Proxy = http.ProxyURL(proxyUrl)
-			}
-		}
-		// socket5 proxy
-		if c.socket5Proxy != "" {
-			var auth *proxy.Auth
-			if c.socket5ProxyUser != "" || c.socket5ProxyPass != "" {
-				auth = &proxy.Auth{User: c.socket5ProxyUser, Password: c.socket5ProxyPass}
-			}
-			socket5ProxyDialer, err := proxy.SOCKS5("tcp", c.socket5Proxy, auth, proxy.Direct)
-			if err == nil {
-				dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-					return socket5ProxyDialer.Dial(network, address)
-				}
-				dialer.NetDialContext = dialContext
-			}
-		}
+		setupProxy(&dialer, c)
 
 		conn, _, err := dialer.Dial(wsURL, communicateHeader)
 		if err != nil {
 			return nil, err
 		}
-
-		// download indicates whether we should be expecting audio data,
-		// this is so what we avoid getting binary data from the websocket
-		// and falsely thinking it's audio data.
-		downloadAudio := false
-
-		// audioWasReceived indicates whether we have received audio data
-		// from the websocket. This is so we can raise an exception if we
-		// don't receive any audio data.
-		audioWasReceived := false
 
 		// Each message needs to have the proper date.
 		date := currentTimeInMST()
@@ -256,7 +220,17 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 			return nil, err
 		}
 
-		go func(idx int) {
+		go func(conn *websocket.Conn, idx int) {
+			// download indicates whether we should be expecting audio data,
+			// this is so what we avoid getting binary data from the websocket
+			// and falsely thinking it's audio data.
+			downloadAudio := false
+
+			// audioWasReceived indicates whether we have received audio data
+			// from the websocket. This is so we can raise an exception if we
+			// don't receive any audio data.
+			audioWasReceived := false
+
 			defer conn.Close()
 			defer func() {
 				if err := recover(); err != nil {
@@ -277,36 +251,36 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 				}
 				switch msgType {
 				case websocket.TextMessage:
-					parameters, data := processWebsocketMessage(message)
+					parameters, data := processWebsocketTextMessage(message)
 					path := parameters["Path"]
-					if path == "turn.start" {
+
+					switch path {
+					case "turn.start":
 						downloadAudio = true
-					} else if path == "turn.end" {
+					case "turn.end":
 						output <- map[string]interface{}{
 							"end": "",
 						}
 						downloadAudio = false
 						break // End of audio data
-					} else if path == "audio.metadata" {
-						var metadata struct {
-							Metadata []MetaDataEntry `json:"Metadata"`
-						}
-						err := json.Unmarshal(data, &metadata)
+
+					case "audio.metadata":
+						metadata, err := processMetadata(data)
 						if err != nil {
-							msg := fmt.Sprintf("err=%s, data=%s", err.Error(), string(data))
 							output <- map[string]interface{}{
-								"error": UnknownResponse{Message: msg},
+								"error": UnknownResponse{Message: err.Error()},
 							}
 							break
 						}
 
-						for _, metaObj := range metadata.Metadata {
+						for _, metaObj := range metadata {
 							metaType := metaObj.Type
 							if idx != prevIdx {
 								shiftTime = sum(idx, finalUtterance)
 								prevIdx = idx
 							}
-							if metaType == "WordBoundary" {
+							switch metaType {
+							case "WordBoundary":
 								finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + 8_750_000
 								output <- map[string]interface{}{
 									"type":     metaType,
@@ -314,18 +288,18 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 									"duration": metaObj.Data.Duration,
 									"text":     metaObj.Data.Text,
 								}
-							} else if metaType == "SessionEnd" {
-								continue
-							} else {
+							case "SessionEnd":
+								// do nothing
+							default:
 								output <- map[string]interface{}{
 									"error": UnknownResponse{Message: "Unknown metadata type: " + metaType},
 								}
 								break
 							}
 						}
-					} else if path == "response" {
-						// Do nothing
-					} else {
+					case "response":
+						// do nothing
+					default:
 						output <- map[string]interface{}{
 							"error": UnknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
 						}
@@ -377,13 +351,12 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 				}
 
 			}
-
 			if !audioWasReceived {
 				output <- map[string]interface{}{
 					"error": NoAudioReceived{Message: "No audio was received. Please verify that your parameters are correct."},
 				}
 			}
-		}(idx)
+		}(conn, idx)
 	}
 	c.op = output
 	return output, nil
@@ -398,21 +371,41 @@ func sum(idx int, m map[int]int) int {
 
 }
 
-func processWebsocketMessage(data []byte) (map[string]string, []byte) {
-	headers := make(map[string]string)
-
-	headerEndIndex := bytes.Index(data, []byte("\r\n\r\n"))
-	if headerEndIndex == -1 {
-		panic("Invalid data format")
+func setupProxy(dialer *websocket.Dialer, c *Communicate) {
+	if c.httpProxy != "" {
+		proxyUrl, _ := url.Parse(c.httpProxy)
+		dialer.Proxy = http.ProxyURL(proxyUrl)
 	}
+	if c.socket5Proxy != "" {
+		auth := &proxy.Auth{User: c.socket5ProxyUser, Password: c.socket5ProxyPass}
+		socket5ProxyDialer, _ := proxy.SOCKS5("tcp", c.socket5Proxy, auth, proxy.Direct)
+		dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+			return socket5ProxyDialer.Dial(network, address)
+		}
+		dialer.NetDialContext = dialContext
+	}
+}
 
+func processMetadata(data []byte) ([]MetaDataEntry, error) {
+	var metadata struct {
+		Metadata []MetaDataEntry `json:"Metadata"`
+	}
+	err := json.Unmarshal(data, &metadata)
+	if err != nil {
+		return nil, fmt.Errorf("err=%s, data=%s", err.Error(), string(data))
+	}
+	return metadata.Metadata, nil
+}
+
+func processWebsocketTextMessage(data []byte) (map[string]string, []byte) {
+	headers := make(map[string]string)
+	headerEndIndex := bytes.Index(data, []byte("\r\n\r\n"))
 	headerLines := bytes.Split(data[:headerEndIndex], []byte("\r\n"))
+
 	for _, line := range headerLines {
 		header := bytes.SplitN(line, []byte(":"), 2)
 		if len(header) == 2 {
-			key := string(bytes.TrimSpace(header[0]))
-			value := string(bytes.TrimSpace(header[1]))
-			headers[key] = value
+			headers[string(bytes.TrimSpace(header[0]))] = string(bytes.TrimSpace(header[1]))
 		}
 	}
 
@@ -420,16 +413,12 @@ func processWebsocketMessage(data []byte) (map[string]string, []byte) {
 }
 
 func removeIncompatibleCharacters(str string) string {
-	chars := []rune(str)
-
-	for i, char := range chars {
-		code := int(char)
-		if (0 <= code && code <= 8) || (11 <= code && code <= 12) || (14 <= code && code <= 31) {
-			chars[i] = ' '
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' {
+			return ' '
 		}
-	}
-
-	return string(chars)
+		return r
+	}, str)
 }
 
 func generateConnectID() string {
@@ -438,43 +427,23 @@ func generateConnectID() string {
 
 func splitTextByByteLength(text string, byteLength int) [][]byte {
 	var result [][]byte
-
 	textBytes := []byte(text)
-	if byteLength <= 0 {
-		return result
-	}
 
-	for len(textBytes) > byteLength {
-		splitAt := bytes.LastIndexByte(textBytes[:byteLength], ' ')
-		if splitAt == -1 {
-			splitAt = byteLength
-		} else {
-			splitAt++
-		}
-
-		for bytes.Contains(textBytes[:splitAt], []byte("&")) && !bytes.Contains(textBytes[:splitAt], []byte(";")) {
-			ampersandIndex := bytes.LastIndexByte(textBytes[:splitAt], '&')
-			if semicolonIndex := bytes.IndexByte(textBytes[ampersandIndex:splitAt], ';'); semicolonIndex != -1 {
-				break
+	if byteLength > 0 {
+		for len(textBytes) > byteLength {
+			splitAt := bytes.LastIndexByte(textBytes[:byteLength], ' ')
+			if splitAt == -1 || splitAt == 0 {
+				splitAt = byteLength
+			} else {
+				splitAt++
 			}
 
-			splitAt = ampersandIndex - 1
-			if splitAt < 0 {
-				panic(errors.New("maximum byte length is too small or invalid text"))
+			trimmedText := bytes.TrimSpace(textBytes[:splitAt])
+			if len(trimmedText) > 0 {
+				result = append(result, trimmedText)
 			}
-			if splitAt == 0 {
-				break
-			}
+			textBytes = textBytes[splitAt:]
 		}
-
-		trimmedText := bytes.TrimSpace(textBytes[:splitAt])
-		if len(trimmedText) > 0 {
-			result = append(result, trimmedText)
-		}
-		if splitAt == 0 {
-			splitAt = 1
-		}
-		textBytes = textBytes[splitAt:]
 	}
 
 	trimmedText := bytes.TrimSpace(textBytes)
