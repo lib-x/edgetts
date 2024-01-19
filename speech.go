@@ -14,10 +14,9 @@ var (
 )
 
 type Speech struct {
-	vm        *VoiceManager
-	options   []Option
-	tasks     []*ttsTask.SingleTask
-	packTasks []*ttsTask.PackTask
+	vm      *VoiceManager
+	options []Option
+	tasks   []ttsTask.Tasker
 }
 
 func (s *Speech) convertToInternalOpt() *communicateOption.CommunicateOption {
@@ -35,10 +34,9 @@ func (s *Speech) convertToInternalOpt() *communicateOption.CommunicateOption {
 // The function returns a pointer to the newly created Speech instance and an error if any occurs during the creation process.
 func NewSpeech(options ...Option) (*Speech, error) {
 	s := &Speech{
-		options:   options,
-		tasks:     make([]*ttsTask.SingleTask, 0),
-		packTasks: make([]*ttsTask.PackTask, 0),
-		vm:        NewVoiceManager(),
+		options: options,
+		tasks:   make([]ttsTask.Tasker, 0),
+		vm:      NewVoiceManager(),
 	}
 	return s, nil
 }
@@ -97,7 +95,7 @@ func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(na
 		Output:           output,
 		MetaData:         metaData,
 	}
-	s.packTasks = append(s.packTasks, packTask)
+	s.tasks = append(s.tasks, packTask)
 	return nil
 }
 
@@ -107,11 +105,8 @@ func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(na
 // The function returns an error if any occurs during the execution of the tasks.
 func (s *Speech) StartTasks() error {
 	wg := &sync.WaitGroup{}
-	wg.Add(len(s.tasks) + len(s.packTasks))
+	wg.Add(len(s.tasks))
 	for _, task := range s.tasks {
-		go task.Start(wg)
-	}
-	for _, task := range s.packTasks {
 		go task.Start(wg)
 	}
 	wg.Wait()
