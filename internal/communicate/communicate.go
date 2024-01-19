@@ -75,6 +75,10 @@ type metaDataEntry struct {
 	Type string    `json:"Type"`
 	Data dataEntry `json:"Data"`
 }
+type metaHub struct {
+	Metadata []metaDataEntry `json:"Metadata"`
+}
+
 type audioData struct {
 	Data  []byte
 	Index int
@@ -274,7 +278,7 @@ func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]
 				break // End of audio data
 
 			case "audio.metadata":
-				metadata, err := processMetadata(data)
+				metaHub, err := getMetaHubFrom(data)
 				if err != nil {
 					output <- map[string]interface{}{
 						"error": unknownResponse{Message: err.Error()},
@@ -282,7 +286,7 @@ func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]
 					break
 				}
 
-				for _, metaObj := range metadata {
+				for _, metaObj := range metaHub.Metadata {
 					metaType := metaObj.Type
 					if idx != c.prevIdx {
 						c.shiftTime = sumWithMap(idx, c.finalUtterance)
@@ -389,15 +393,13 @@ func setupWebSocketProxy(dialer *websocket.Dialer, c *Communicate) {
 	}
 }
 
-func processMetadata(data []byte) ([]metaDataEntry, error) {
-	var metadata struct {
-		Metadata []metaDataEntry `json:"Metadata"`
-	}
+func getMetaHubFrom(data []byte) (*metaHub, error) {
+	metadata := &metaHub{}
 	err := json.Unmarshal(data, &metadata)
 	if err != nil {
 		return nil, fmt.Errorf("err=%s, data=%s", err.Error(), string(data))
 	}
-	return metadata.Metadata, nil
+	return metadata, nil
 }
 
 func processWebsocketTextMessage(data []byte) (map[string]string, []byte) {
