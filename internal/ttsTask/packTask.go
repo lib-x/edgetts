@@ -20,7 +20,7 @@ type PackTask struct {
 	// PackEntryCreator defines the function to create a writer for each entry
 	PackEntryCreator func(string) (io.Writer, error)
 	// CommunicateOpt defines the options for communicating with the TTS engine
-	CommunicateOpt []communicateOption.Option
+	CommunicateOpt *communicateOption.CommunicateOption
 	// PackEntries defines the list of entries to be packed into a file
 	PackEntries []*PackEntry
 	// Output
@@ -33,7 +33,7 @@ func (p *PackTask) Start(wg *sync.WaitGroup) error {
 	defer wg.Done()
 	for _, entry := range p.PackEntries {
 		// for zip file, the entry should be written after creation.
-		c, err := communicate.NewCommunicate(entry.Text, p.CommunicateOpt...)
+		c, err := communicate.NewCommunicate(entry.Text, p.CommunicateOpt)
 		if err != nil {
 			log.Printf("create communicate error:%v \r\n", err)
 			continue
