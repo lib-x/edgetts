@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,8 +32,16 @@ const (
 )
 
 var (
-	escapeReplacer = strings.NewReplacer(">", "&gt;", "<", "&lt;")
+	headerOnce        = &sync.Once{}
+	escapeReplacer    = strings.NewReplacer(">", "&gt;", "<", "&lt;")
+	communicateHeader http.Header
 )
+
+func init() {
+	headerOnce.Do(func() {
+		communicateHeader = makeHeaders()
+	})
+}
 
 type Communicate struct {
 	text                string
@@ -145,15 +154,15 @@ func (c *Communicate) CloseOutput() {
 	close(c.op)
 }
 
-func (c *Communicate) makeHeaders() http.Header {
-	headers := make(http.Header)
-	headers.Set("Pragma", "no-cache")
-	headers.Set("Cache-Control", "no-cache")
-	headers.Set("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
-	headers.Set("Accept-Encoding", "gzip, deflate, br")
-	headers.Set("Accept-Language", "en-US,en;q=0.9")
-	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41")
-	return headers
+func makeHeaders() http.Header {
+	header := make(http.Header)
+	header.Set("Pragma", "no-cache")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
+	header.Set("Accept-Encoding", "gzip, deflate, br")
+	header.Set("Accept-Language", "en-US,en;q=0.9")
+	header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41")
+	return header
 }
 
 func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
@@ -196,7 +205,7 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 			}
 		}
 
-		conn, _, err := dialer.Dial(wsURL, c.makeHeaders())
+		conn, _, err := dialer.Dial(wsURL, communicateHeader)
 		if err != nil {
 			return nil, err
 		}
