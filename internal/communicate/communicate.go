@@ -55,7 +55,10 @@ type Communicate struct {
 	socket5ProxyPass string
 	op               chan map[string]interface{}
 
-	AudioDataIndex int
+	audioDataIndex int
+	prevIdx        int
+	shiftTime      int
+	finalUtterance map[int]int
 }
 
 type textEntry struct {
@@ -121,18 +124,18 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 	if err != nil {
 		return err
 	}
-	audioBinaryData := make([][][]byte, c.AudioDataIndex)
-	for i := range op {
-		if _, ok := i["end"]; ok {
-			if len(audioBinaryData) == c.AudioDataIndex {
+	audioBinaryData := make([][][]byte, c.audioDataIndex)
+	for data := range op {
+		if _, ok := data["end"]; ok {
+			if len(audioBinaryData) == c.audioDataIndex {
 				break
 			}
 		}
-		if t, ok := i["type"]; ok && t == "audio" {
-			data := i["data"].(audioData)
+		if t, ok := data["type"]; ok && t == "audio" {
+			data := data["data"].(audioData)
 			audioBinaryData[data.Index] = append(audioBinaryData[data.Index], data.Data)
 		}
-		if e, ok := i["error"]; ok {
+		if e, ok := data["error"]; ok {
 			fmt.Printf("has error err: %v\n", e)
 		}
 	}
@@ -165,11 +168,11 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 		escape(removeIncompatibleCharacters(c.text)),
 		calculateMaxMessageSize(c.voice, c.rate, c.volume),
 	)
-	c.AudioDataIndex = len(texts)
+	c.audioDataIndex = len(texts)
 
-	finalUtterance := make(map[int]int)
-	prevIdx := -1
-	shiftTime := -1
+	c.finalUtterance = make(map[int]int)
+	c.prevIdx = -1
+	c.shiftTime = -1
 
 	output := make(chan map[string]interface{})
 
@@ -207,160 +210,162 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 			return nil, err
 		}
 
-		err = conn.WriteMessage(websocket.TextMessage, []byte(
-			ssmlHeadersAppendExtraData(
-				generateConnectID(),
-				date,
-				makeSsml(string(text), c.voice, c.rate, c.volume),
-			),
-		))
+		err = conn.WriteMessage(websocket.TextMessage,
+			[]byte(
+				ssmlHeadersAppendExtraData(
+					generateConnectID(),
+					date,
+					makeSsml(string(text), c.voice, c.rate, c.volume),
+				),
+			))
 		if err != nil {
 			conn.Close()
 			return nil, err
 		}
 
-		go func(conn *websocket.Conn, idx int) {
-			// download indicates whether we should be expecting audio data,
-			// this is so what we avoid getting binary data from the websocket
-			// and falsely thinking it's audio data.
-			downloadAudio := false
-
-			// audioWasReceived indicates whether we have received audio data
-			// from the websocket. This is so we can raise an exception if we
-			// don't receive any audio data.
-			audioWasReceived := false
-
-			defer conn.Close()
-			defer func() {
-				if err := recover(); err != nil {
-					fmt.Printf("communicate.Stream recovered from panic: %v stack: %s", err, string(debug.Stack()))
-				}
-			}()
-
-			for {
-				msgType, message, err := conn.ReadMessage()
-				if err != nil {
-					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-						// WebSocket error
-						output <- map[string]interface{}{
-							"error": webSocketError{Message: err.Error()},
-						}
-					}
-					break
-				}
-				switch msgType {
-				case websocket.TextMessage:
-					parameters, data := processWebsocketTextMessage(message)
-					path := parameters["Path"]
-
-					switch path {
-					case "turn.start":
-						downloadAudio = true
-					case "turn.end":
-						output <- map[string]interface{}{
-							"end": "",
-						}
-						downloadAudio = false
-						break // End of audio data
-
-					case "audio.metadata":
-						metadata, err := processMetadata(data)
-						if err != nil {
-							output <- map[string]interface{}{
-								"error": unknownResponse{Message: err.Error()},
-							}
-							break
-						}
-
-						for _, metaObj := range metadata {
-							metaType := metaObj.Type
-							if idx != prevIdx {
-								shiftTime = sumWithMap(idx, finalUtterance)
-								prevIdx = idx
-							}
-							switch metaType {
-							case "WordBoundary":
-								finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + 8_750_000
-								output <- map[string]interface{}{
-									"type":     metaType,
-									"offset":   metaObj.Data.Offset + shiftTime,
-									"duration": metaObj.Data.Duration,
-									"text":     metaObj.Data.Text,
-								}
-							case "SessionEnd":
-								// do nothing
-							default:
-								output <- map[string]interface{}{
-									"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
-								}
-								break
-							}
-						}
-					case "response":
-						// do nothing
-					default:
-						output <- map[string]interface{}{
-							"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
-						}
-						break
-					}
-				case websocket.BinaryMessage:
-					if !downloadAudio {
-						output <- map[string]interface{}{
-							"error": unknownResponse{"We received a binary message, but we are not expecting one."},
-						}
-					}
-
-					if len(message) < 2 {
-						output <- map[string]interface{}{
-							"error": unknownResponse{"We received a binary message, but it is missing the header length."},
-						}
-					}
-
-					headerLength := int(binary.BigEndian.Uint16(message[:2]))
-					if len(message) < headerLength+2 {
-						output <- map[string]interface{}{
-							"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
-						}
-					}
-
-					audioBinaryData := message[headerLength+2:]
-					output <- map[string]interface{}{
-						"type": "audio",
-						"data": audioData{
-							Data:  audioBinaryData,
-							Index: idx,
-						},
-					}
-					audioWasReceived = true
-				default:
-					if message != nil {
-						output <- map[string]interface{}{
-							"error": webSocketError{
-								Message: string(message),
-							},
-						}
-					} else {
-						output <- map[string]interface{}{
-							"error": webSocketError{
-								Message: "Unknown error",
-							},
-						}
-					}
-				}
-
-			}
-			if !audioWasReceived {
-				output <- map[string]interface{}{
-					"error": noAudioReceived{Message: "No audio was received. Please verify that your parameters are correct."},
-				}
-			}
-		}(conn, idx)
+		go c.handleStream(conn, output, idx)
 	}
 	c.op = output
 	return output, nil
 }
 
+func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]interface{}, idx int) {
+	// download indicates whether we should be expecting audio data,
+	// this is so what we avoid getting binary data from the websocket
+	// and falsely thinking it's audio data.
+	downloadAudio := false
+
+	// audioWasReceived indicates whether we have received audio data
+	// from the websocket. This is so we can raise an exception if we
+	// don't receive any audio data.
+	audioWasReceived := false
+
+	defer conn.Close()
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Printf("communicate.Stream recovered from panic: %v stack: %s", err, string(debug.Stack()))
+		}
+	}()
+
+	for {
+		msgType, message, err := conn.ReadMessage()
+		if err != nil {
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				// WebSocket error
+				output <- map[string]interface{}{
+					"error": webSocketError{Message: err.Error()},
+				}
+			}
+			break
+		}
+		switch msgType {
+		case websocket.TextMessage:
+			parameters, data := processWebsocketTextMessage(message)
+			path := parameters["Path"]
+
+			switch path {
+			case "turn.start":
+				downloadAudio = true
+			case "turn.end":
+				output <- map[string]interface{}{
+					"end": "",
+				}
+				downloadAudio = false
+				break // End of audio data
+
+			case "audio.metadata":
+				metadata, err := processMetadata(data)
+				if err != nil {
+					output <- map[string]interface{}{
+						"error": unknownResponse{Message: err.Error()},
+					}
+					break
+				}
+
+				for _, metaObj := range metadata {
+					metaType := metaObj.Type
+					if idx != c.prevIdx {
+						c.shiftTime = sumWithMap(idx, c.finalUtterance)
+						c.prevIdx = idx
+					}
+					switch metaType {
+					case "WordBoundary":
+						c.finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + 8_750_000
+						output <- map[string]interface{}{
+							"type":     metaType,
+							"offset":   metaObj.Data.Offset + c.shiftTime,
+							"duration": metaObj.Data.Duration,
+							"text":     metaObj.Data.Text,
+						}
+					case "SessionEnd":
+						// do nothing
+					default:
+						output <- map[string]interface{}{
+							"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
+						}
+						break
+					}
+				}
+			case "response":
+				// do nothing
+			default:
+				output <- map[string]interface{}{
+					"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
+				}
+				break
+			}
+		case websocket.BinaryMessage:
+			if !downloadAudio {
+				output <- map[string]interface{}{
+					"error": unknownResponse{"We received a binary message, but we are not expecting one."},
+				}
+			}
+
+			if len(message) < 2 {
+				output <- map[string]interface{}{
+					"error": unknownResponse{"We received a binary message, but it is missing the header length."},
+				}
+			}
+
+			headerLength := int(binary.BigEndian.Uint16(message[:2]))
+			if len(message) < headerLength+2 {
+				output <- map[string]interface{}{
+					"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
+				}
+			}
+
+			audioBinaryData := message[headerLength+2:]
+			output <- map[string]interface{}{
+				"type": "audio",
+				"data": audioData{
+					Data:  audioBinaryData,
+					Index: idx,
+				},
+			}
+			audioWasReceived = true
+		default:
+			if message != nil {
+				output <- map[string]interface{}{
+					"error": webSocketError{
+						Message: string(message),
+					},
+				}
+			} else {
+				output <- map[string]interface{}{
+					"error": webSocketError{
+						Message: "Unknown error",
+					},
+				}
+			}
+		}
+
+	}
+	if !audioWasReceived {
+		output <- map[string]interface{}{
+			"error": noAudioReceived{Message: "No audio was received. Please verify that your parameters are correct."},
+		}
+	}
+}
 func sumWithMap(idx int, m map[int]int) int {
 	sumResult := 0
 	for i := 0; i < idx; i++ {
@@ -463,7 +468,8 @@ func splitTextByByteLength(text string, byteLength int) [][]byte {
 }
 
 func makeSsml(text string, voice string, rate string, volume string) string {
-	ssml := fmt.Sprintf(ssmlTemplate,
+	ssml := fmt.Sprintf(
+		ssmlTemplate,
 		voice,
 		rate,
 		volume,
@@ -479,7 +485,8 @@ func currentTimeInMST() string {
 }
 
 func ssmlHeadersAppendExtraData(requestID string, timestamp string, ssml string) string {
-	headers := fmt.Sprintf(ssmlHeaderTemplate,
+	headers := fmt.Sprintf(
+		ssmlHeaderTemplate,
 		requestID,
 		timestamp,
 	)
