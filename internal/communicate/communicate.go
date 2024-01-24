@@ -6,10 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/lib-x/edgetts/internal/businessConsts"
-	"github.com/lib-x/edgetts/internal/communicateOption"
-	"github.com/lib-x/edgetts/internal/validate"
-	"golang.org/x/net/proxy"
 	"html"
 	"io"
 	"net"
@@ -20,6 +16,11 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/lib-x/edgetts/internal/businessConsts"
+	"github.com/lib-x/edgetts/internal/communicateOption"
+	"github.com/lib-x/edgetts/internal/validate"
+	"golang.org/x/net/proxy"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -190,38 +191,13 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 			return nil, err
 		}
 
-		// Each message needs to have the proper date.
-		date := currentTimeInMST()
-
-		// Prepare the request to be sent to the service.
-		//
-		// Note sentenceBoundaryEnabled and wordBoundaryEnabled are actually supposed
-		// to be booleans, but Edge Browser seems to send them as strings.
-		//
-		// This is a bug in Edge as Azure Cognitive Services actually sends them as
-		// bool and not string. For now I will send them as bool unless it causes
-		// any problems.
-		//
-		// Also pay close attention to double { } in request (escape for f-string).
-		err = conn.WriteMessage(websocket.TextMessage, []byte(
-			"X-Timestamp:"+date+"\r\n"+
-				"Content-Type:application/json; charset=utf-8\r\n"+
-				"Path:speech.config\r\n\r\n"+
-				`{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":true},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`+"\r\n",
-		))
+		currentTime := currentTimeInMST()
+		err = c.sendConfig(conn, currentTime)
 		if err != nil {
 			conn.Close()
 			return nil, err
 		}
-
-		err = conn.WriteMessage(websocket.TextMessage,
-			[]byte(
-				ssmlHeadersAppendExtraData(
-					generateConnectID(),
-					date,
-					makeSsml(string(text), c.voice, c.rate, c.volume),
-				),
-			))
+		err = c.sendSSML(conn, currentTime, text)
 		if err != nil {
 			conn.Close()
 			return nil, err
@@ -233,6 +209,35 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	return output, nil
 }
 
+func (c *Communicate) sendConfig(conn *websocket.Conn, currentTime string) error {
+	// Prepare the request to be sent to the service.
+	//
+	// Note sentenceBoundaryEnabled and wordBoundaryEnabled are actually supposed
+	// to be booleans, but Edge Browser seems to send them as strings.
+	//
+	// This is a bug in Edge as Azure Cognitive Services actually sends them as
+	// bool and not string. For now I will send them as bool unless it causes
+	// any problems.
+	//
+	// Also pay close attention to double { } in request (escape for f-string).
+	return conn.WriteMessage(websocket.TextMessage, []byte(
+		"X-Timestamp:"+currentTime+"\r\n"+
+			"Content-Type:application/json; charset=utf-8\r\n"+
+			"Path:speech.config\r\n\r\n"+
+			`{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":true},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`+"\r\n",
+	))
+}
+
+func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []byte) error {
+	return conn.WriteMessage(websocket.TextMessage,
+		[]byte(
+			ssmlHeadersAppendExtraData(
+				generateConnectID(),
+				currentTime,
+				makeSsml(string(text), c.voice, c.rate, c.volume),
+			),
+		))
+}
 func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]interface{}, idx int) {
 	// download indicates whether we should be expecting audio data,
 	// this is so what we avoid getting binary data from the websocket
