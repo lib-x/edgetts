@@ -269,7 +269,7 @@ func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]
 				break // End of audio data
 
 			case "audio.metadata":
-				metaHub, err := getMetaHubFrom(data)
+				meta, err := getMetaHubFrom(data)
 				if err != nil {
 					output <- map[string]interface{}{
 						"error": unknownResponse{Message: err.Error()},
@@ -277,7 +277,7 @@ func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]
 					break
 				}
 
-				for _, metaObj := range metaHub.Metadata {
+				for _, metaObj := range meta.Metadata {
 					metaType := metaObj.Type
 					if idx != c.prevIdx {
 						c.shiftTime = sumWithMap(idx, c.finalUtterance)
