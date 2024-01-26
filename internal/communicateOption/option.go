@@ -17,6 +17,7 @@ type CommunicateOption struct {
 	Socket5Proxy     string
 	Socket5ProxyUser string
 	Socket5ProxyPass string
+	IgnoreSSL        bool
 }
 
 func (c *CommunicateOption) CheckAndApplyDefaultOption() {

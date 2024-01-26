@@ -3,15 +3,16 @@ package edgetts
 import "github.com/lib-x/edgetts/internal/communicateOption"
 
 type option struct {
-	Voice            string
-	VoiceLangRegion  string
-	Pitch            string
-	Rate             string
-	Volume           string
-	HttpProxy        string
-	Socket5Proxy     string
-	Socket5ProxyUser string
-	Socket5ProxyPass string
+	Voice                 string
+	VoiceLangRegion       string
+	Pitch                 string
+	Rate                  string
+	Volume                string
+	HttpProxy             string
+	Socket5Proxy          string
+	Socket5ProxyUser      string
+	Socket5ProxyPass      string
+	IgnoreSSLVerification bool
 }
 
 func (o *option) toInternalOption() *communicateOption.CommunicateOption {
@@ -25,6 +26,7 @@ func (o *option) toInternalOption() *communicateOption.CommunicateOption {
 		Socket5Proxy:     o.Socket5Proxy,
 		Socket5ProxyUser: o.Socket5ProxyUser,
 		Socket5ProxyPass: o.Socket5ProxyPass,
+		IgnoreSSL:        o.IgnoreSSLVerification,
 	}
 }
 
@@ -65,15 +67,26 @@ func WithVolume(volume string) Option {
 }
 
 func WithHttpProxy(proxy string) Option {
+	return WithHttpProxyEx(proxy, false)
+}
+
+func WithHttpProxyEx(proxy string, ignoreSSLVerification bool) Option {
 	return func(option *option) {
 		option.HttpProxy = proxy
+		option.IgnoreSSLVerification = ignoreSSLVerification
 	}
 }
 
 func WithSocket5Proxy(proxy, userName, password string) Option {
+	return WithSocket5ProxyEx(proxy, userName, password, false)
+}
+
+func WithSocket5ProxyEx(proxy, userName, password string, ignoreSSLVerification bool) Option {
 	return func(option *option) {
 		option.Socket5Proxy = proxy
 		option.Socket5ProxyUser = userName
 		option.Socket5ProxyPass = password
+		option.IgnoreSSLVerification = ignoreSSLVerification
 	}
+
 }

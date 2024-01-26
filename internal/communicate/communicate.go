@@ -3,6 +3,7 @@ package communicate
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -44,23 +45,14 @@ func init() {
 }
 
 type Communicate struct {
-	text                string
-	voice               string
-	pitch               string
-	rate                string
-	volume              string
-	voiceLanguageRegion string
-
-	httpProxy        string
-	socket5Proxy     string
-	socket5ProxyUser string
-	socket5ProxyPass string
+	text string
 
 	audioDataIndex int
 	prevIdx        int
 	shiftTime      int
 	finalUtterance map[int]int
 	op             chan map[string]interface{}
+	opt            *communicateOption.CommunicateOption
 }
 
 type textEntry struct {
@@ -112,16 +104,8 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 		return nil, err
 	}
 	return &Communicate{
-		text:                text,
-		pitch:               opt.Pitch,
-		voice:               opt.Voice,
-		voiceLanguageRegion: opt.VoiceLangRegion,
-		rate:                opt.Rate,
-		volume:              opt.Volume,
-		httpProxy:           opt.HttpProxy,
-		socket5Proxy:        opt.Socket5Proxy,
-		socket5ProxyUser:    opt.Socket5ProxyUser,
-		socket5ProxyPass:    opt.Socket5ProxyPass,
+		text: text,
+		opt:  opt,
 	}, nil
 }
 
@@ -173,7 +157,7 @@ func makeHeaders() http.Header {
 func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	texts := splitTextByByteLength(
 		escape(removeIncompatibleCharacters(c.text)),
-		calculateMaxMessageSize(c.pitch, c.voice, c.rate, c.volume),
+		calculateMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
 	)
 	c.audioDataIndex = len(texts)
 
@@ -236,7 +220,7 @@ func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []
 			ssmlHeadersAppendExtraData(
 				generateConnectID(),
 				currentTime,
-				makeSsml(string(text), c.pitch, c.voice, c.rate, c.volume),
+				makeSsml(string(text), c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
 			),
 		))
 }
@@ -386,17 +370,20 @@ func sumWithMap(idx int, m map[int]int) int {
 }
 
 func setupWebSocketProxy(dialer *websocket.Dialer, c *Communicate) {
-	if c.httpProxy != "" {
-		proxyUrl, _ := url.Parse(c.httpProxy)
+	if c.opt.HttpProxy != "" {
+		proxyUrl, _ := url.Parse(c.opt.HttpProxy)
 		dialer.Proxy = http.ProxyURL(proxyUrl)
 	}
-	if c.socket5Proxy != "" {
-		auth := &proxy.Auth{User: c.socket5ProxyUser, Password: c.socket5ProxyPass}
-		socket5ProxyDialer, _ := proxy.SOCKS5("tcp", c.socket5Proxy, auth, proxy.Direct)
+	if c.opt.Socket5Proxy != "" {
+		auth := &proxy.Auth{User: c.opt.Socket5ProxyUser, Password: c.opt.Socket5ProxyPass}
+		socket5ProxyDialer, _ := proxy.SOCKS5("tcp", c.opt.Socket5Proxy, auth, proxy.Direct)
 		dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
 			return socket5ProxyDialer.Dial(network, address)
 		}
 		dialer.NetDialContext = dialContext
+	}
+	if c.opt.IgnoreSSL {
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 }
 
