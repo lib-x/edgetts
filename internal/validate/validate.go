@@ -2,17 +2,20 @@ package validate
 
 import (
 	"errors"
-	"github.com/lib-x/edgetts/internal/communicateOption"
 	"regexp"
+
+	"github.com/lib-x/edgetts/internal/communicateOption"
 )
 
 var (
+	validPitchPattern      = regexp.MustCompile(`^[+-]\d+Hz$`)
 	validVoicePattern      = regexp.MustCompile(`^([a-z]{2,})-([A-Z]{2,})-(.+Neural)$`)
 	validRateVolumePattern = regexp.MustCompile(`^[+-]\d+%$`)
 )
 
 var (
 	InvalidVoiceError  = errors.New("invalid voice")
+	InvalidPitchError  = errors.New("invalid pitch")
 	InvalidRateError   = errors.New("invalid rate")
 	InvalidVolumeError = errors.New("invalid volume")
 )
@@ -24,8 +27,11 @@ func WithCommunicateOption(c *communicateOption.CommunicateOption) error {
 		return InvalidVoiceError
 	}
 
+	// WithCommunicateOption pitch
+	if !validPitchPattern.MatchString(c.Pitch) {
+		return InvalidPitchError
+	}
 	// WithCommunicateOption rate
-
 	if !validRateVolumePattern.MatchString(c.Rate) {
 		return InvalidRateError
 	}
@@ -34,5 +40,6 @@ func WithCommunicateOption(c *communicateOption.CommunicateOption) error {
 	if !validRateVolumePattern.MatchString(c.Volume) {
 		return InvalidVolumeError
 	}
+
 	return nil
 }

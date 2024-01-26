@@ -28,7 +28,7 @@ import (
 
 const (
 	ssmlHeaderTemplate = "X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n"
-	ssmlTemplate       = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='%s'><prosody pitch='+0Hz' rate='%s' volume='%s'>%s</prosody></voice></speak>"
+	ssmlTemplate       = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='%s'><prosody pitch='%s' rate='%s' volume='%s'>%s</prosody></voice></speak>"
 )
 
 var (
@@ -46,26 +46,27 @@ func init() {
 type Communicate struct {
 	text                string
 	voice               string
-	voiceLanguageRegion string
+	pitch               string
 	rate                string
 	volume              string
+	voiceLanguageRegion string
 
 	httpProxy        string
 	socket5Proxy     string
 	socket5ProxyUser string
 	socket5ProxyPass string
-	op               chan map[string]interface{}
 
 	audioDataIndex int
 	prevIdx        int
 	shiftTime      int
 	finalUtterance map[int]int
+	op             chan map[string]interface{}
 }
 
 type textEntry struct {
 	Text         string `json:"text"`
-	Length       int64  `json:"Length"`
 	BoundaryType string `json:"BoundaryType"`
+	Length       int64  `json:"Length"`
 }
 type dataEntry struct {
 	Offset   int       `json:"Offset"`
@@ -112,6 +113,7 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 	}
 	return &Communicate{
 		text:                text,
+		pitch:               opt.Pitch,
 		voice:               opt.Voice,
 		voiceLanguageRegion: opt.VoiceLangRegion,
 		rate:                opt.Rate,
@@ -171,7 +173,7 @@ func makeHeaders() http.Header {
 func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 	texts := splitTextByByteLength(
 		escape(removeIncompatibleCharacters(c.text)),
-		calculateMaxMessageSize(c.voice, c.rate, c.volume),
+		calculateMaxMessageSize(c.pitch, c.voice, c.rate, c.volume),
 	)
 	c.audioDataIndex = len(texts)
 
@@ -234,7 +236,7 @@ func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []
 			ssmlHeadersAppendExtraData(
 				generateConnectID(),
 				currentTime,
-				makeSsml(string(text), c.voice, c.rate, c.volume),
+				makeSsml(string(text), c.pitch, c.voice, c.rate, c.volume),
 			),
 		))
 }
@@ -474,10 +476,11 @@ func splitTextByByteLength(text string, byteLength int) [][]byte {
 	return result
 }
 
-func makeSsml(text string, voice string, rate string, volume string) string {
+func makeSsml(text string, pitch, voice string, rate string, volume string) string {
 	ssml := fmt.Sprintf(
 		ssmlTemplate,
 		voice,
+		pitch,
 		rate,
 		volume,
 		text)
@@ -500,9 +503,9 @@ func ssmlHeadersAppendExtraData(requestID string, timestamp string, ssml string)
 	return headers + ssml
 }
 
-func calculateMaxMessageSize(voice string, rate string, volume string) int {
+func calculateMaxMessageSize(pitch, voice string, rate string, volume string) int {
 	websocketMaxSize := 1 << 16
-	overheadPerMessage := len(ssmlHeadersAppendExtraData(generateConnectID(), currentTimeInMST(), makeSsml("", voice, rate, volume))) + 50
+	overheadPerMessage := len(ssmlHeadersAppendExtraData(generateConnectID(), currentTimeInMST(), makeSsml("", pitch, voice, rate, volume))) + 50
 	return websocketMaxSize - overheadPerMessage
 }
 

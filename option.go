@@ -5,6 +5,7 @@ import "github.com/lib-x/edgetts/internal/communicateOption"
 type option struct {
 	Voice            string
 	VoiceLangRegion  string
+	Pitch            string
 	Rate             string
 	Volume           string
 	HttpProxy        string
@@ -17,6 +18,7 @@ func (o *option) toInternalOption() *communicateOption.CommunicateOption {
 	return &communicateOption.CommunicateOption{
 		Voice:            o.Voice,
 		VoiceLangRegion:  o.VoiceLangRegion,
+		Pitch:            o.Pitch,
 		Rate:             o.Rate,
 		Volume:           o.Volume,
 		HttpProxy:        o.HttpProxy,
@@ -41,12 +43,21 @@ func WithVoiceLangRegion(voiceLangRegion string) Option {
 
 }
 
+// WithPitch set pitch of the tts output.such as +50Hz,-50Hz
+func WithPitch(pitch string) Option {
+	return func(option *option) {
+		option.Pitch = pitch
+	}
+}
+
+// WithRate set rate of the tts output.rate=-50% means rate down 50%,rate=+50% means rate up 50%
 func WithRate(rate string) Option {
 	return func(option *option) {
 		option.Rate = rate
 	}
 }
 
+// WithVolume set volume of the tts output.volume=-50% means volume down 50%,volume=+50% means volume up 50%
 func WithVolume(volume string) Option {
 	return func(option *option) {
 		option.Volume = volume

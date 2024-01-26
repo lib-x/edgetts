@@ -2,13 +2,15 @@ package communicateOption
 
 import (
 	"fmt"
-	"github.com/lib-x/edgetts/internal/businessConsts"
 	"strings"
+
+	"github.com/lib-x/edgetts/internal/businessConsts"
 )
 
 type CommunicateOption struct {
 	Voice            string
 	VoiceLangRegion  string
+	Pitch            string
 	Rate             string
 	Volume           string
 	HttpProxy        string
@@ -30,6 +32,9 @@ func (c *CommunicateOption) CheckAndApplyDefaultOption() {
 		region := voiceParsed[1]
 		name := voiceParsed[2]
 		c.VoiceLangRegion = fmt.Sprintf(businessConsts.VoiceNameTemplate, lang, region, name)
+	}
+	if c.Pitch == "" {
+		c.Pitch = "+0Hz"
 	}
 	if c.Rate == "" {
 		c.Rate = "+0%"
