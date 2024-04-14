@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
@@ -29,7 +30,6 @@ import (
 
 const (
 	ssmlHeaderTemplate = "X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n"
-	ssmlTemplate       = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='%s'><prosody pitch='%s' rate='%s' volume='%s'>%s</prosody></voice></speak>"
 )
 
 var (
@@ -464,14 +464,27 @@ func splitTextByByteLength(text string, byteLength int) [][]byte {
 }
 
 func makeSsml(text string, pitch, voice string, rate string, volume string) string {
-	ssml := fmt.Sprintf(
-		ssmlTemplate,
-		voice,
-		pitch,
-		rate,
-		volume,
-		text)
-	return ssml
+	ssml := &Speak{
+		XMLName: xml.Name{Local: "speak"},
+		Version: "1.0",
+		Xmlns:   "http://www.w3.org/2001/10/synthesis",
+		Lang:    "en-US",
+		Voice: []Voice{{
+			Name: voice,
+			Prosody: Prosody{
+				Pitch:  pitch,
+				Rate:   rate,
+				Volume: volume,
+				Text:   text,
+			},
+		}},
+	}
+
+	output, err := xml.MarshalIndent(ssml, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(output)
 }
 
 func currentTimeInMST() string {
