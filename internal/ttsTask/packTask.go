@@ -35,26 +35,17 @@ func (p *PackTask) Start(wg *sync.WaitGroup) error {
 	defer wg.Done()
 	for _, entry := range p.PackEntries {
 		// for zip file, the entry should be written after creation.
-		opt := p.CommunicateOpt
-		if entry.EntryCommunicateOpt != nil {
-			opt = entry.EntryCommunicateOpt
-
-		}
-		c, err := communicate.NewCommunicate(entry.Text, opt)
-		if err != nil {
-			log.Printf("create communicate error:%v \r\n", err)
+		if err := p.processPackEntry(entry); err != nil {
 			continue
-		}
-		entryWriter, err := p.PackEntryCreator(entry.EntryName)
-		err = c.WriteStreamTo(entryWriter)
-		if err != nil {
-			log.Printf("write data to entry writer error:%v \r\n", err)
-			return err
 		}
 	}
 	// after all entries are written, write the meta data into a json file. this process is optional.
 	// so error is ignored.
+	p.writeMetaDataForPack()
+	return nil
+}
 
+func (p *PackTask) writeMetaDataForPack() {
 	if len(p.MetaData) > 0 {
 		for _, metaData := range p.MetaData {
 			for entryName, entryPayload := range metaData {
@@ -69,6 +60,25 @@ func (p *PackTask) Start(wg *sync.WaitGroup) error {
 				}
 			}
 		}
+	}
+}
+
+func (p *PackTask) processPackEntry(entry *PackEntry) error {
+	opt := p.CommunicateOpt
+	if entry.EntryCommunicateOpt != nil {
+		opt = entry.EntryCommunicateOpt
+	}
+	c, err := communicate.NewCommunicate(entry.Text, opt)
+	defer c.CloseOutput()
+	if err != nil {
+		log.Printf("create communicate error:%v \r\n", err)
+		return err
+	}
+	entryWriter, err := p.PackEntryCreator(entry.EntryName)
+	err = c.WriteStreamTo(entryWriter)
+	if err != nil {
+		log.Printf("write data to entry writer error:%v \r\n", err)
+		return err
 	}
 	return nil
 }

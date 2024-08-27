@@ -93,6 +93,10 @@ func (s *Speech) AddPackTaskWithCustomOptions(dataEntries map[string]string, ent
 	}
 	packEntries := make([]*ttsTask.PackEntry, 0, taskCount)
 	for name, text := range dataEntries {
+		// empty text will cause goroutine leak,ignore it
+		if text == "" {
+			continue
+		}
 		packEntry := &ttsTask.PackEntry{
 			Text:      text,
 			EntryName: name,

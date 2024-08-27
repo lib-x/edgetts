@@ -116,17 +116,17 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 		return err
 	}
 	audioBinaryData := make([][][]byte, c.audioDataIndex)
-	for data := range op {
-		if _, ok := data["end"]; ok {
+	for payload := range op {
+		if _, ok := payload["end"]; ok {
 			if len(audioBinaryData) == c.audioDataIndex {
 				break
 			}
 		}
-		if t, ok := data["type"]; ok && t == "audio" {
-			data := data["data"].(audioData)
+		if t, ok := payload["type"]; ok && t == "audio" {
+			data := payload["data"].(audioData)
 			audioBinaryData[data.Index] = append(audioBinaryData[data.Index], data.Data)
 		}
-		if e, ok := data["error"]; ok {
+		if e, ok := payload["error"]; ok {
 			fmt.Printf("has error err: %v\n", e)
 		}
 	}
