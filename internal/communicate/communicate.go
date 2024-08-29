@@ -140,7 +140,9 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 }
 
 func (c *Communicate) CloseOutput() {
-	close(c.op)
+	if c.op != nil {
+		close(c.op)
+	}
 }
 
 func makeHeaders() http.Header {
