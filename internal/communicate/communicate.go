@@ -113,16 +113,17 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 
 	output := make(chan map[string]interface{})
-	defer close(output)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	err := c.stream(ctx, output)
 	if err != nil {
+		close(output)
 		return err
 	}
 	audioBinaryData := make([][][]byte, c.audioDataIndex)
+
 	for payload := range output {
 		if _, ok := payload["end"]; ok {
 			if len(audioBinaryData) == c.audioDataIndex {
@@ -133,9 +134,6 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 			data := payload["data"].(audioData)
 			audioBinaryData[data.Index] = append(audioBinaryData[data.Index], data.Data)
 		}
-		if e, ok := payload["error"]; ok {
-			fmt.Printf("has error err: %v\n", e)
-		}
 	}
 
 	for _, dataSlice := range audioBinaryData {
@@ -143,6 +141,7 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 			rc.Write(data)
 		}
 	}
+	close(output)
 	return nil
 }
 
@@ -176,19 +175,16 @@ func (c *Communicate) stream(ctx context.Context, output chan map[string]interfa
 		if err != nil {
 			return err
 		}
-
 		currentTime := currentTimeInMST()
 		err = c.sendConfig(conn, currentTime)
 		if err != nil {
 			conn.Close()
 			return err
 		}
-		err = c.sendSSML(conn, currentTime, text)
-		if err != nil {
+		if err = c.sendSSML(conn, currentTime, text); err != nil {
 			conn.Close()
 			return err
 		}
-
 		go c.connStreamExchange(ctx, conn, output, idx)
 	}
 	return nil
@@ -251,12 +247,7 @@ func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Co
 		default:
 			msgType, message, err := conn.ReadMessage()
 			if err != nil {
-				if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					// WebSocket error
-					output <- map[string]interface{}{
-						"error": webSocketError{Message: err.Error()},
-					}
-				}
+				log.Println("read message from conn err", err)
 				break
 			}
 			switch msgType {
@@ -346,17 +337,9 @@ func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Co
 				audioWasReceived = true
 			default:
 				if message != nil {
-					output <- map[string]interface{}{
-						"error": webSocketError{
-							Message: string(message),
-						},
-					}
+					log.Println("received  message:", string(message))
 				} else {
-					output <- map[string]interface{}{
-						"error": webSocketError{
-							Message: "Unknown error",
-						},
-					}
+					log.Println("unknown error")
 				}
 			}
 		}
