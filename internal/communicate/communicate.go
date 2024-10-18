@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -116,6 +115,7 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 
 	output := make(chan map[string]interface{})
+	defer close(output)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -144,7 +144,6 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 			rc.Write(data)
 		}
 	}
-	close(output)
 	return nil
 }
 
@@ -157,40 +156,6 @@ func makeHeaders() http.Header {
 	header.Set("Accept-Language", "en-US,en;q=0.9")
 	header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41")
 	return header
-}
-
-func (c *Communicate) stream(ctx context.Context, output chan map[string]interface{}) error {
-	texts := splitTextByByteLength(
-		escape(removeIncompatibleCharacters(c.text)),
-		calculateMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
-	)
-	c.audioDataIndex = len(texts)
-	c.finalUtterance = make(map[int]int)
-	c.prevIdx = -1
-	c.shiftTime = -1
-
-	for idx, text := range texts {
-		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
-		dialer := websocket.Dialer{}
-		setupWebSocketProxy(&dialer, c)
-
-		conn, _, err := dialer.Dial(wsURL, communicateHeader)
-		if err != nil {
-			return err
-		}
-		currentTime := currentTimeInMST()
-		err = c.sendConfig(conn, currentTime)
-		if err != nil {
-			conn.Close()
-			return err
-		}
-		if err = c.sendSSML(conn, currentTime, text); err != nil {
-			conn.Close()
-			return err
-		}
-		go c.connStreamExchange(ctx, conn, output, idx)
-	}
-	return nil
 }
 
 func (c *Communicate) sendConfig(conn *websocket.Conn, currentTime string) error {
@@ -222,6 +187,54 @@ func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []
 			),
 		))
 }
+func (c *Communicate) stream(ctx context.Context, output chan map[string]interface{}) error {
+	texts := splitTextByByteLength(
+		escape(removeIncompatibleCharacters(c.text)),
+		calculateMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
+	)
+	c.audioDataIndex = len(texts)
+	c.finalUtterance = make(map[int]int)
+	c.prevIdx = -1
+	c.shiftTime = -1
+
+	var wg sync.WaitGroup
+
+	for idx, text := range texts {
+		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
+		dialer := websocket.Dialer{}
+		setupWebSocketProxy(&dialer, c)
+
+		conn, _, err := dialer.Dial(wsURL, communicateHeader)
+		if err != nil {
+			return err
+		}
+
+		wg.Add(1)
+		go func(ctx context.Context, conn *websocket.Conn, idx int) {
+			defer wg.Done()
+			defer conn.Close()
+
+			currentTime := currentTimeInMST()
+			err = c.sendConfig(conn, currentTime)
+			if err != nil {
+				log.Println("sendConfig error:", err)
+				return
+			}
+			if err = c.sendSSML(conn, currentTime, text); err != nil {
+				log.Println("sendSSML error:", err)
+				return
+			}
+			c.connStreamExchange(ctx, conn, output, idx)
+		}(ctx, conn, idx)
+	}
+
+	go func() {
+		wg.Wait()
+	}()
+
+	return nil
+}
+
 func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Conn, output chan map[string]interface{}, idx int) {
 	// download indicates whether we should be expecting audio data,
 	// this is so what we avoid getting binary data from the websocket
@@ -232,13 +245,6 @@ func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Co
 	// from the websocket. This is so we can raise an exception if we
 	// don't receive any audio data.
 	audioWasReceived := false
-
-	defer conn.Close()
-	defer func() {
-		if err := recover(); err != nil {
-			fmt.Printf("communicate.Stream recovered from panic: %v stack: %s", err, string(debug.Stack()))
-		}
-	}()
 
 	for {
 		select {
@@ -259,8 +265,8 @@ func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Co
 			}
 		}
 	}
-
 }
+
 func sumWithMap(idx int, m map[int]int) int {
 	sumResult := 0
 	for i := 0; i < idx; i++ {
