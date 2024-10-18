@@ -69,7 +69,6 @@ func (p *PackTask) processPackEntry(entry *PackEntry) error {
 		opt = entry.EntryCommunicateOpt
 	}
 	c, err := communicate.NewCommunicate(entry.Text, opt)
-	defer c.CloseOutput()
 	if err != nil {
 		log.Printf("create communicate error:%v \r\n", err)
 		return err

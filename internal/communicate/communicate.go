@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -51,7 +52,6 @@ type Communicate struct {
 	prevIdx        int
 	shiftTime      int
 	finalUtterance map[int]int
-	op             chan map[string]interface{}
 	opt            *communicateOption.CommunicateOption
 }
 
@@ -111,12 +111,19 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 
 // WriteStreamTo  write audio stream to io.WriteCloser
 func (c *Communicate) WriteStreamTo(rc io.Writer) error {
-	op, err := c.stream()
+
+	output := make(chan map[string]interface{})
+	defer close(output)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := c.stream(ctx, output)
 	if err != nil {
 		return err
 	}
 	audioBinaryData := make([][][]byte, c.audioDataIndex)
-	for payload := range op {
+	for payload := range output {
 		if _, ok := payload["end"]; ok {
 			if len(audioBinaryData) == c.audioDataIndex {
 				break
@@ -139,12 +146,6 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 	return nil
 }
 
-func (c *Communicate) CloseOutput() {
-	if c.op != nil {
-		close(c.op)
-	}
-}
-
 func makeHeaders() http.Header {
 	header := make(http.Header)
 	header.Set("Pragma", "no-cache")
@@ -156,18 +157,15 @@ func makeHeaders() http.Header {
 	return header
 }
 
-func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
+func (c *Communicate) stream(ctx context.Context, output chan map[string]interface{}) error {
 	texts := splitTextByByteLength(
 		escape(removeIncompatibleCharacters(c.text)),
 		calculateMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
 	)
 	c.audioDataIndex = len(texts)
-
 	c.finalUtterance = make(map[int]int)
 	c.prevIdx = -1
 	c.shiftTime = -1
-
-	output := make(chan map[string]interface{})
 
 	for idx, text := range texts {
 		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
@@ -176,25 +174,24 @@ func (c *Communicate) stream() (<-chan map[string]interface{}, error) {
 
 		conn, _, err := dialer.Dial(wsURL, communicateHeader)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		currentTime := currentTimeInMST()
 		err = c.sendConfig(conn, currentTime)
 		if err != nil {
 			conn.Close()
-			return nil, err
+			return err
 		}
 		err = c.sendSSML(conn, currentTime, text)
 		if err != nil {
 			conn.Close()
-			return nil, err
+			return err
 		}
 
-		go c.handleStream(conn, output, idx)
+		go c.connStreamExchange(ctx, conn, output, idx)
 	}
-	c.op = output
-	return output, nil
+	return nil
 }
 
 func (c *Communicate) sendConfig(conn *websocket.Conn, currentTime string) error {
@@ -226,7 +223,7 @@ func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []
 			),
 		))
 }
-func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]interface{}, idx int) {
+func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Conn, output chan map[string]interface{}, idx int) {
 	// download indicates whether we should be expecting audio data,
 	// this is so what we avoid getting binary data from the websocket
 	// and falsely thinking it's audio data.
@@ -245,123 +242,126 @@ func (c *Communicate) handleStream(conn *websocket.Conn, output chan map[string]
 	}()
 
 	for {
-		msgType, message, err := conn.ReadMessage()
-		if err != nil {
-			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				// WebSocket error
-				output <- map[string]interface{}{
-					"error": webSocketError{Message: err.Error()},
-				}
+		select {
+		case <-ctx.Done():
+			if !audioWasReceived {
+				log.Println("No audio was received. Please verify that your parameters are correct.")
 			}
 			break
-		}
-		switch msgType {
-		case websocket.TextMessage:
-			parameters, data := processWebsocketTextMessage(message)
-			path := parameters["Path"]
-
-			switch path {
-			case "turn.start":
-				downloadAudio = true
-			case "turn.end":
-				output <- map[string]interface{}{
-					"end": "",
-				}
-				downloadAudio = false
-				break // End of audio data
-
-			case "audio.metadata":
-				meta, err := getMetaHubFrom(data)
-				if err != nil {
+		default:
+			msgType, message, err := conn.ReadMessage()
+			if err != nil {
+				if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					// WebSocket error
 					output <- map[string]interface{}{
-						"error": unknownResponse{Message: err.Error()},
+						"error": webSocketError{Message: err.Error()},
 					}
-					break
-				}
-
-				for _, metaObj := range meta.Metadata {
-					metaType := metaObj.Type
-					if idx != c.prevIdx {
-						c.shiftTime = sumWithMap(idx, c.finalUtterance)
-						c.prevIdx = idx
-					}
-					switch metaType {
-					case "WordBoundary":
-						c.finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + 8_750_000
-						output <- map[string]interface{}{
-							"type":     metaType,
-							"offset":   metaObj.Data.Offset + c.shiftTime,
-							"duration": metaObj.Data.Duration,
-							"text":     metaObj.Data.Text,
-						}
-					case "SessionEnd":
-						// do nothing
-					default:
-						output <- map[string]interface{}{
-							"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
-						}
-						break
-					}
-				}
-			case "response":
-				// do nothing
-			default:
-				output <- map[string]interface{}{
-					"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
 				}
 				break
 			}
-		case websocket.BinaryMessage:
-			if !downloadAudio {
-				output <- map[string]interface{}{
-					"error": unknownResponse{"We received a binary message, but we are not expecting one."},
-				}
-			}
+			switch msgType {
+			case websocket.TextMessage:
+				parameters, data := processWebsocketTextMessage(message)
+				path := parameters["Path"]
 
-			if len(message) < 2 {
-				output <- map[string]interface{}{
-					"error": unknownResponse{"We received a binary message, but it is missing the header length."},
-				}
-			}
+				switch path {
+				case "turn.start":
+					downloadAudio = true
+				case "turn.end":
+					output <- map[string]interface{}{
+						"end": "",
+					}
+					downloadAudio = false
+					break // End of audio data
 
-			headerLength := int(binary.BigEndian.Uint16(message[:2]))
-			if len(message) < headerLength+2 {
-				output <- map[string]interface{}{
-					"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
-				}
-			}
+				case "audio.metadata":
+					meta, err := getMetaHubFrom(data)
+					if err != nil {
+						output <- map[string]interface{}{
+							"error": unknownResponse{Message: err.Error()},
+						}
+						break
+					}
 
-			audioBinaryData := message[headerLength+2:]
-			output <- map[string]interface{}{
-				"type": "audio",
-				"data": audioData{
-					Data:  audioBinaryData,
-					Index: idx,
-				},
-			}
-			audioWasReceived = true
-		default:
-			if message != nil {
+					for _, metaObj := range meta.Metadata {
+						metaType := metaObj.Type
+						if idx != c.prevIdx {
+							c.shiftTime = sumWithMap(idx, c.finalUtterance)
+							c.prevIdx = idx
+						}
+						switch metaType {
+						case "WordBoundary":
+							c.finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + 8_750_000
+							output <- map[string]interface{}{
+								"type":     metaType,
+								"offset":   metaObj.Data.Offset + c.shiftTime,
+								"duration": metaObj.Data.Duration,
+								"text":     metaObj.Data.Text,
+							}
+						case "SessionEnd":
+							// do nothing
+						default:
+							output <- map[string]interface{}{
+								"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
+							}
+							break
+						}
+					}
+				case "response":
+					// do nothing
+				default:
+					output <- map[string]interface{}{
+						"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
+					}
+					break
+				}
+			case websocket.BinaryMessage:
+				if !downloadAudio {
+					output <- map[string]interface{}{
+						"error": unknownResponse{"We received a binary message, but we are not expecting one."},
+					}
+				}
+
+				if len(message) < 2 {
+					output <- map[string]interface{}{
+						"error": unknownResponse{"We received a binary message, but it is missing the header length."},
+					}
+				}
+
+				headerLength := int(binary.BigEndian.Uint16(message[:2]))
+				if len(message) < headerLength+2 {
+					output <- map[string]interface{}{
+						"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
+					}
+				}
+
+				audioBinaryData := message[headerLength+2:]
 				output <- map[string]interface{}{
-					"error": webSocketError{
-						Message: string(message),
+					"type": "audio",
+					"data": audioData{
+						Data:  audioBinaryData,
+						Index: idx,
 					},
 				}
-			} else {
-				output <- map[string]interface{}{
-					"error": webSocketError{
-						Message: "Unknown error",
-					},
+				audioWasReceived = true
+			default:
+				if message != nil {
+					output <- map[string]interface{}{
+						"error": webSocketError{
+							Message: string(message),
+						},
+					}
+				} else {
+					output <- map[string]interface{}{
+						"error": webSocketError{
+							Message: "Unknown error",
+						},
+					}
 				}
 			}
 		}
+	}
 
-	}
-	if !audioWasReceived {
-		output <- map[string]interface{}{
-			"error": noAudioReceived{Message: "No audio was received. Please verify that your parameters are correct."},
-		}
-	}
 }
 func sumWithMap(idx int, m map[int]int) int {
 	sumResult := 0
