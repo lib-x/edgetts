@@ -1,6 +1,7 @@
 package communicate
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -348,28 +349,19 @@ func generateConnectID() string {
 // A slice of byte slices, each representing a chunk of the original text.
 func splitTextByByteLength(text string, byteLength int) [][]byte {
 	var result [][]byte
-	textBytes := []byte(text)
-
-	if byteLength > 0 {
-		for len(textBytes) > byteLength {
-			splitAt := bytes.LastIndexByte(textBytes[:byteLength], ' ')
-			if splitAt == -1 || splitAt == 0 {
-				splitAt = byteLength
-			} else {
-				splitAt++
-			}
-
-			trimmedText := bytes.TrimSpace(textBytes[:splitAt])
-			if len(trimmedText) > 0 {
-				result = append(result, trimmedText)
-			}
-			textBytes = textBytes[splitAt:]
+	scanner := bufio.NewScanner(strings.NewReader(text))
+	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
 		}
-	}
+		if len(data) > byteLength {
+			return byteLength, data[:byteLength], nil
+		}
+		return len(data), data, bufio.ErrFinalToken
+	})
 
-	trimmedText := bytes.TrimSpace(textBytes)
-	if len(trimmedText) > 0 {
-		result = append(result, trimmedText)
+	for scanner.Scan() {
+		result = append(result, bytes.TrimSpace(scanner.Bytes()))
 	}
 
 	return result
