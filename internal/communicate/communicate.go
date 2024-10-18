@@ -30,7 +30,9 @@ import (
 )
 
 const (
-	ssmlHeaderTemplate = "X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n"
+	ssmlHeaderTemplate      = "X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n"
+	wordBoundaryOffset      = 8_750_000
+	binaryMessageHeaderSize = 2
 )
 
 var (
@@ -243,104 +245,16 @@ func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Co
 			if !audioWasReceived {
 				log.Println("No audio was received. Please verify that your parameters are correct.")
 			}
-			break
+			return
 		default:
 			msgType, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Println("read message from conn err", err)
-				break
+				return
 			}
-			switch msgType {
-			case websocket.TextMessage:
-				parameters, data := processWebsocketTextMessage(message)
-				path := parameters["Path"]
-
-				switch path {
-				case "turn.start":
-					downloadAudio = true
-				case "turn.end":
-					output <- map[string]interface{}{
-						"end": "",
-					}
-					downloadAudio = false
-					break // End of audio data
-
-				case "audio.metadata":
-					meta, err := getMetaHubFrom(data)
-					if err != nil {
-						output <- map[string]interface{}{
-							"error": unknownResponse{Message: err.Error()},
-						}
-						break
-					}
-
-					for _, metaObj := range meta.Metadata {
-						metaType := metaObj.Type
-						if idx != c.prevIdx {
-							c.shiftTime = sumWithMap(idx, c.finalUtterance)
-							c.prevIdx = idx
-						}
-						switch metaType {
-						case "WordBoundary":
-							c.finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + 8_750_000
-							output <- map[string]interface{}{
-								"type":     metaType,
-								"offset":   metaObj.Data.Offset + c.shiftTime,
-								"duration": metaObj.Data.Duration,
-								"text":     metaObj.Data.Text,
-							}
-						case "SessionEnd":
-							// do nothing
-						default:
-							output <- map[string]interface{}{
-								"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
-							}
-							break
-						}
-					}
-				case "response":
-					// do nothing
-				default:
-					output <- map[string]interface{}{
-						"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
-					}
-					break
-				}
-			case websocket.BinaryMessage:
-				if !downloadAudio {
-					output <- map[string]interface{}{
-						"error": unknownResponse{"We received a binary message, but we are not expecting one."},
-					}
-				}
-
-				if len(message) < 2 {
-					output <- map[string]interface{}{
-						"error": unknownResponse{"We received a binary message, but it is missing the header length."},
-					}
-				}
-
-				headerLength := int(binary.BigEndian.Uint16(message[:2]))
-				if len(message) < headerLength+2 {
-					output <- map[string]interface{}{
-						"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
-					}
-				}
-
-				audioBinaryData := message[headerLength+2:]
-				output <- map[string]interface{}{
-					"type": "audio",
-					"data": audioData{
-						Data:  audioBinaryData,
-						Index: idx,
-					},
-				}
-				audioWasReceived = true
-			default:
-				if message != nil {
-					log.Println("received  message:", string(message))
-				} else {
-					log.Println("unknown error")
-				}
+			continueProcessing := c.handleWebSocketMessage(msgType, message, output, idx, &downloadAudio, &audioWasReceived)
+			if !continueProcessing {
+				return
 			}
 		}
 	}
@@ -381,19 +295,32 @@ func getMetaHubFrom(data []byte) (*metaHub, error) {
 	return metadata, nil
 }
 
-func processWebsocketTextMessage(data []byte) (map[string]string, []byte) {
-	headers := make(map[string]string)
+// processWebsocketTextMessage parses a websocket text message into headers and body.
+// It returns a map of headers and the message body as a byte slice.
+func processWebsocketTextMessage(data []byte) (headers map[string]string, body []byte) {
+	headers = make(map[string]string)
+	// Find the end of the headers section
 	headerEndIndex := bytes.Index(data, []byte("\r\n\r\n"))
-	headerLines := bytes.Split(data[:headerEndIndex], []byte("\r\n"))
-
-	for _, line := range headerLines {
-		header := bytes.SplitN(line, []byte(":"), 2)
-		if len(header) == 2 {
-			headers[string(bytes.TrimSpace(header[0]))] = string(bytes.TrimSpace(header[1]))
-		}
+	if headerEndIndex == -1 {
+		// If there's no header separator, treat the entire message as body
+		return headers, data
 	}
+	// Split headers into individual lines
+	headerLines := bytes.Split(data[:headerEndIndex], []byte("\r\n"))
+	// Parse each header line
+	for _, line := range headerLines {
+		parts := bytes.SplitN(line, []byte(":"), 2)
+		if len(parts) == 2 {
+			key := string(bytes.TrimSpace(parts[0]))
+			value := string(bytes.TrimSpace(parts[1]))
+			headers[key] = value
+		}
+		// Ignore malformed header lines
+	}
+	// The body starts after the headers
+	body = data[headerEndIndex+4:]
 
-	return headers, data[headerEndIndex+4:]
+	return headers, body
 }
 
 func removeIncompatibleCharacters(str string) string {
@@ -510,4 +437,109 @@ func replaceWithDict(data string, entities map[string]string) string {
 		data = strings.ReplaceAll(data, key, value)
 	}
 	return data
+}
+
+func (c *Communicate) handleWebSocketMessage(msgType int, message []byte, output chan map[string]interface{}, idx int, downloadAudio *bool, audioWasReceived *bool) bool {
+	switch msgType {
+	case websocket.TextMessage:
+		return c.handleTextMessage(message, output, idx, downloadAudio)
+	case websocket.BinaryMessage:
+		return c.handleBinaryMessage(message, output, idx, downloadAudio, audioWasReceived)
+	default:
+		log.Printf("Received unknown message type: %d", msgType)
+		return true
+	}
+}
+
+func (c *Communicate) handleTextMessage(message []byte, output chan map[string]interface{}, idx int, downloadAudio *bool) bool {
+	parameters, data := processWebsocketTextMessage(message)
+	path := parameters["Path"]
+
+	switch path {
+	case "turn.start":
+		*downloadAudio = true
+	case "turn.end":
+		output <- map[string]interface{}{
+			"end": "",
+		}
+		*downloadAudio = false
+		return false // End of audio data
+
+	case "audio.metadata":
+		meta, err := getMetaHubFrom(data)
+		if err != nil {
+			output <- map[string]interface{}{
+				"error": unknownResponse{Message: err.Error()},
+			}
+			return false
+		}
+
+		for _, metaObj := range meta.Metadata {
+			metaType := metaObj.Type
+			if idx != c.prevIdx {
+				c.shiftTime = sumWithMap(idx, c.finalUtterance)
+				c.prevIdx = idx
+			}
+			switch metaType {
+			case "WordBoundary":
+				c.finalUtterance[idx] = metaObj.Data.Offset + metaObj.Data.Duration + wordBoundaryOffset
+				output <- map[string]interface{}{
+					"type":     metaType,
+					"offset":   metaObj.Data.Offset + c.shiftTime,
+					"duration": metaObj.Data.Duration,
+					"text":     metaObj.Data.Text,
+				}
+			case "SessionEnd":
+				// do nothing
+			default:
+				output <- map[string]interface{}{
+					"error": unknownResponse{Message: "Unknown metadata type: " + metaType},
+				}
+				return false
+			}
+		}
+	case "response":
+		// do nothing
+	default:
+		output <- map[string]interface{}{
+			"error": unknownResponse{Message: "The response from the service is not recognized.\n" + string(message)},
+		}
+		return false
+	}
+	return true
+}
+
+func (c *Communicate) handleBinaryMessage(message []byte, output chan map[string]interface{}, idx int, downloadAudio *bool, audioWasReceived *bool) bool {
+	if !*downloadAudio {
+		output <- map[string]interface{}{
+			"error": unknownResponse{"We received a binary message, but we are not expecting one."},
+		}
+		return false
+	}
+
+	if len(message) < binaryMessageHeaderSize {
+		output <- map[string]interface{}{
+			"error": unknownResponse{"We received a binary message, but it is missing the header length."},
+		}
+		return false
+	}
+
+	headerLength := int(binary.BigEndian.Uint16(message[:2]))
+	if len(message) < headerLength+2 {
+		output <- map[string]interface{}{
+			"error": unknownResponse{"We received a binary message, but it is missing the audio data."},
+		}
+		return false
+	}
+
+	audioBinaryData := message[headerLength+2:]
+	output <- map[string]interface{}{
+		"type": "audio",
+		"data": audioData{
+			Data:  audioBinaryData,
+			Index: idx,
+		},
+	}
+	*audioWasReceived = true
+	return true
 }
