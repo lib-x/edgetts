@@ -122,7 +122,6 @@ func (c *Communicate) WriteStreamTo(rc io.Writer) error {
 
 	err := c.stream(ctx, output)
 	if err != nil {
-		close(output)
 		return err
 	}
 	audioBinaryData := make([][][]byte, c.audioDataIndex)
