@@ -2,11 +2,13 @@ package edgetts
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"sync"
+
 	"github.com/lib-x/edgetts/internal/communicate"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"github.com/lib-x/edgetts/internal/ttsTask"
-	"io"
-	"sync"
 )
 
 var (
@@ -131,10 +133,32 @@ func (s *Speech) AddPackTaskWithCustomOptions(dataEntries map[string]string, ent
 // The function returns an error if any occurs during the execution of the tasks.
 func (s *Speech) StartTasks() error {
 	wg := &sync.WaitGroup{}
+	errCh := make(chan error, len(s.tasks))
+
 	wg.Add(len(s.tasks))
 	for _, task := range s.tasks {
-		go task.Start(wg)
+		go func() {
+			err := task.Start(wg)
+			if err != nil {
+				errCh <- err
+			}
+		}()
 	}
 	wg.Wait()
+	close(errCh)
+
+	errN := 0
+	errMsg := ""
+	for err := range errCh {
+		if err != nil {
+			errN++
+			errMsg += fmt.Sprintf("%s; ", err)
+		}
+	}
+
+	if errN > 0 {
+		return fmt.Errorf("%d/%d tasks failed: %s", errN, len(s.tasks), errMsg)
+	}
+
 	return nil
 }

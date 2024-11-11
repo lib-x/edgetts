@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"html"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -199,7 +201,8 @@ func (c *Communicate) stream(ctx context.Context, output chan map[string]interfa
 	var wg sync.WaitGroup
 
 	for idx, text := range texts {
-		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID()
+		wsURL := businessConsts.EdgeWssEndpoint + "&ConnectionId=" + generateConnectID() + "&Sec-MS-GEC=" + generateSecMsGecToken() + "&Sec-MS-GEC-Version=1-" + businessConsts.ChromiumFullVersion
+
 		dialer := websocket.Dialer{}
 		setupWebSocketProxy(&dialer, c)
 
@@ -336,6 +339,21 @@ func removeIncompatibleCharacters(str string) string {
 		}
 		return r
 	}, str)
+}
+
+func generateSecMsGecToken() string {
+	ticks := big.NewInt(int64(time.Now().Unix()) + businessConsts.WindowsFileTimeEpoch)
+	ticks = ticks.Mul(ticks, big.NewInt(10000000)) // 转换为100纳秒单位
+
+	roundedTicks := new(big.Int).Div(ticks, big.NewInt(3000000000))
+	roundedTicks = roundedTicks.Mul(roundedTicks, big.NewInt(3000000000))
+
+	strToHash := roundedTicks.String() + businessConsts.TrustedClientToken
+
+	hash := sha256.Sum256([]byte(strToHash))
+	hashStr := fmt.Sprintf("%X", hash)
+
+	return hashStr
 }
 
 func generateConnectID() string {
