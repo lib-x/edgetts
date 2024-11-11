@@ -2,6 +2,7 @@ package edgetts
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/lib-x/edgetts/internal/businessConsts"
 	"net/http"
 	"sync"
@@ -62,9 +63,15 @@ func makeVoiceListRequestHeader() http.Header {
 	header.Set("Content-Type", "application/json")
 	header.Set("Accept", "*/*")
 	header.Set("Authority", "speech.platform.bing.com")
-	header.Set("Sec-CH-UA", `" Not;A Brand";v="99", "Microsoft Edge";v="91", "Chromium";v="91"`)
+	header.Set("Sec-CH-UA", fmt.Sprintf(`" Not;A Brand";v="99", "Microsoft Edge";v="%s", "Chromium";v="%s"`,
+		businessConsts.ChromiumMajorVersion,
+		businessConsts.ChromiumMajorVersion,
+	))
 	header.Set("Sec-CH-UA-Mobile", "?0")
-	header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0")
+	header.Set("User-Agent", fmt.Sprintf("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s.0.0.0 Safari/537.36 Edg/%s.0.0.0",
+		businessConsts.ChromiumMajorVersion,
+		businessConsts.ChromiumMajorVersion,
+	))
 	header.Set("Sec-Fetch-Site", "none")
 	header.Set("Sec-Fetch-Mode", "cors")
 	header.Set("Sec-Fetch-Dest", "empty")
