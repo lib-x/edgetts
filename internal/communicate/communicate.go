@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"html"
 	"io"
 	"log"
 	"net"
@@ -427,7 +426,6 @@ func calculateMaxMessageSize(pitch, voice string, rate string, volume string) in
 func escape(data string) string {
 	// Must do ampersand first
 	entities := make(map[string]string)
-	data = html.EscapeString(data)
 	data = escapeReplacer.Replace(data)
 	if entities != nil {
 		data = replaceWithDict(data, entities)
