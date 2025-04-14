@@ -8,4 +8,4 @@ require (
 	github.com/gorilla/websocket v1.5.3
 )
 
-require golang.org/x/net v0.38.0
+require golang.org/x/net v0.39.0
