@@ -1,6 +1,7 @@
 module github.com/lib-x/edgetts
 
-go 1.22.6
+go 1.23.0
+
 toolchain go1.24.1
 
 require (
@@ -8,4 +9,4 @@ require (
 	github.com/gorilla/websocket v1.5.3
 )
 
-require golang.org/x/net v0.39.0
+require golang.org/x/net v0.40.0
