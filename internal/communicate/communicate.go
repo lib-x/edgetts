@@ -112,34 +112,18 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 
 // WriteStreamTo  write audio stream to io.WriteCloser
 func (c *Communicate) WriteStreamTo(rc io.Writer) error {
-
-	output := make(chan map[string]interface{})
-	defer close(output)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := c.stream(ctx, output)
+	output, err := c.stream(ctx)
 	if err != nil {
 		return err
 	}
-	audioBinaryData := make([][][]byte, c.audioDataIndex)
 
 	for payload := range output {
-		if _, ok := payload["end"]; ok {
-			if len(audioBinaryData) == c.audioDataIndex {
-				break
-			}
-		}
 		if t, ok := payload["type"]; ok && t == "audio" {
 			data := payload["data"].(audioData)
-			audioBinaryData[data.Index] = append(audioBinaryData[data.Index], data.Data)
-		}
-	}
-
-	for _, dataSlice := range audioBinaryData {
-		for _, data := range dataSlice {
-			rc.Write(data)
+			rc.Write(data.Data)
 		}
 	}
 	return nil
@@ -188,7 +172,8 @@ func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []
 			),
 		))
 }
-func (c *Communicate) stream(ctx context.Context, output chan map[string]interface{}) error {
+func (c *Communicate) stream(ctx context.Context) (chan map[string]interface{}, error) {
+	output := make(chan map[string]interface{})
 	texts := splitTextByByteLength(
 		escape(removeIncompatibleCharacters(c.text)),
 		calculateMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
@@ -197,46 +182,42 @@ func (c *Communicate) stream(ctx context.Context, output chan map[string]interfa
 	c.finalUtterance = make(map[int]int)
 	c.prevIdx = -1
 	c.shiftTime = -1
-
-	var wg sync.WaitGroup
-
-	for idx, text := range texts {
-		wsURL := businessConsts.EdgeWssEndpoint +
-			"&Sec-MS-GEC=" + GenerateSecMsGecToken() +
-			"&Sec-MS-GEC-Version=" + GenerateSecMsGecVersion() +
-			"&ConnectionId=" + generateConnectID()
-		dialer := websocket.Dialer{}
-		setupWebSocketProxy(&dialer, c)
-
-		conn, _, err := dialer.Dial(wsURL, communicateHeader)
-		if err != nil {
-			return err
-		}
-
-		wg.Add(1)
-		go func(ctx context.Context, conn *websocket.Conn, idx int) {
-			defer wg.Done()
-			defer conn.Close()
-
-			currentTime := currentTimeInMST()
-			err = c.sendConfig(conn, currentTime)
-			if err != nil {
-				log.Println("sendConfig error:", err)
-				return
-			}
-			if err = c.sendSSML(conn, currentTime, text); err != nil {
-				log.Println("sendSSML error:", err)
-				return
-			}
-			c.connStreamExchange(ctx, conn, output, idx)
-		}(ctx, conn, idx)
-	}
-
+	
 	go func() {
-		wg.Wait()
+		defer close(output)
+		for idx, text := range texts {
+			func() {
+				wsURL := businessConsts.EdgeWssEndpoint +
+					"&Sec-MS-GEC=" + GenerateSecMsGecToken() +
+					"&Sec-MS-GEC-Version=" + GenerateSecMsGecVersion() +
+					"&ConnectionId=" + generateConnectID()
+				dialer := websocket.Dialer{}
+				setupWebSocketProxy(&dialer, c)
+
+				conn, _, err := dialer.Dial(wsURL, communicateHeader)
+				if err != nil {
+					output <- map[string]interface{}{
+						"error": webSocketError{Message: err.Error()},
+					}
+					return
+				}
+				defer conn.Close()
+				currentTime := currentTimeInMST()
+				err = c.sendConfig(conn, currentTime)
+				if err != nil {
+					log.Println("sendConfig error:", err)
+					return
+				}
+				if err = c.sendSSML(conn, currentTime, text); err != nil {
+					log.Println("sendSSML error:", err)
+					return
+				}
+				c.connStreamExchange(ctx, conn, output, idx)
+			}()
+		}
 	}()
 
-	return nil
+	return output, nil
 }
 
 func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Conn, output chan map[string]interface{}, idx int) {
