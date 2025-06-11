@@ -7,7 +7,14 @@ import (
 	"time"
 )
 
-func GenerateSecMsGecToken() string {
+func generateWssEndpoint() string {
+	return businessConsts.EdgeWssEndpoint +
+		"&Sec-MS-GEC=" + generateSecMsGecToken() +
+		"&Sec-MS-GEC-Version=" + generateSecMsGecVersion() +
+		"&ConnectionId=" + generateConnectID()
+}
+
+func generateSecMsGecToken() string {
 	now := time.Now().UTC()
 	ticks := (now.Unix() + 11644473600) * 10000000
 	ticks = ticks - (ticks % 3_000_000_000)
@@ -19,7 +26,7 @@ func GenerateSecMsGecToken() string {
 	return hexDig
 }
 
-// GenerateSecMsGecVersion  Sec-MS-GEC-Version token
-func GenerateSecMsGecVersion() string {
+// generateSecMsGecVersion  Sec-MS-GEC-Version token
+func generateSecMsGecVersion() string {
 	return fmt.Sprintf("1-%s", businessConsts.ChromiumFllVersion)
 }
