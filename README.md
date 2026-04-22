@@ -2,7 +2,9 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/lib-x/edgetts.svg)](https://pkg.go.dev/github.com/lib-x/edgetts)
 [![Release](https://img.shields.io/github/v/release/lib-x/edgetts)](https://github.com/lib-x/edgetts/releases)
-[![CI](https://github.com/lib-x/edgetts/actions/workflows/release.yml/badge.svg)](https://github.com/lib-x/edgetts/actions/workflows/release.yml)
+[![CI](https://github.com/lib-x/edgetts/actions/workflows/ci.yml/badge.svg)](https://github.com/lib-x/edgetts/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/lib-x/edgetts)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lib-x/edgetts)](https://goreportcard.com/report/github.com/lib-x/edgetts)
 A Go library for Microsoft Edge TTS with a simpler API for common use cases.
 
 ## Highlights
