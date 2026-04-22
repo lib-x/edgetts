@@ -8,6 +8,13 @@
 
 English | [简体中文](README.zh-CN.md)
 
+## Documentation
+
+- English guide: `README.md`
+- Chinese guide: [`README.zh-CN.md`](README.zh-CN.md)
+- API reference: https://pkg.go.dev/github.com/lib-x/edgetts
+- Releases: https://github.com/lib-x/edgetts/releases
+
 A Go library for Microsoft Edge TTS with a simpler API for common use cases.
 
 ## Highlights

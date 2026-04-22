@@ -8,6 +8,28 @@
 
 [English](README.md) | 简体中文
 
+## 文档导航
+
+- 英文文档：[`README.md`](README.md)
+- 中文文档：`README.zh-CN.md`
+- API 文档：https://pkg.go.dev/github.com/lib-x/edgetts
+- Release 列表：https://github.com/lib-x/edgetts/releases
+
+## 目录
+
+- [特性](#特性)
+- [安装](#安装)
+- [快速开始](#快速开始)
+- [可运行 demo](#可运行-demo)
+- [包级便捷 API](#包级便捷-api)
+- [Client API](#client-api)
+- [输出方式](#输出方式)
+- [批量处理](#批量处理)
+- [Voices](#voices)
+- [Demo 参数](#demo-参数)
+- [迁移指南](#迁移指南)
+- [兼容说明](#兼容说明)
+
 一个更易用的 Microsoft Edge TTS Go 库，适合单次调用、服务端流式输出和批量生成等场景。
 
 ## 特性
