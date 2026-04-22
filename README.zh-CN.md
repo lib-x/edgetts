@@ -6,28 +6,28 @@
 [![License](https://img.shields.io/github/license/lib-x/edgetts)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/lib-x/edgetts)](https://goreportcard.com/report/github.com/lib-x/edgetts)
 
-English | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
-A Go library for Microsoft Edge TTS with a simpler API for common use cases.
+一个更易用的 Microsoft Edge TTS Go 库，适合单次调用、服务端流式输出和批量生成等场景。
 
-## Highlights
+## 特性
 
-- Client-based API for reusable configuration.
-- Package-level convenience functions for one-off calls.
-- Text and SSML are first-class, symmetric inputs.
-- Output to `[]byte`, file, `io.Writer`, stream, directory, and ZIP.
-- Voice listing and filtering helpers.
-- Legacy `Speech` API kept as a deprecated compatibility layer.
+- 基于 `Client` 的可复用 API。
+- 提供包级便捷函数，适合一次性调用。
+- `Text` 和 `SSML` 都是一等输入类型。
+- 支持输出到 `[]byte`、文件、`io.Writer`、流、目录和 ZIP。
+- 提供 voice 列表与筛选能力。
+- 保留旧 `Speech` API 作为弃用兼容层。
 
-## Install
+## 安装
 
 ```bash
 go get github.com/lib-x/edgetts
 ```
 
-## Quick start
+## 快速开始
 
-### Save text to mp3
+### 保存文本到 mp3
 
 ```go
 package main
@@ -41,9 +41,9 @@ import (
 func main() {
     err := edgetts.Save(
         context.Background(),
-        "Hello, world.",
+        "你好，世界。",
         "hello.mp3",
-        edgetts.WithVoice("en-US-GuyNeural"),
+        edgetts.WithVoice("zh-CN-XiaoxiaoNeural"),
     )
     if err != nil {
         panic(err)
@@ -51,44 +51,44 @@ func main() {
 }
 ```
 
-### Reuse a client
+### 复用一个 client
 
 ```go
 client := edgetts.New(
-    edgetts.WithVoice("en-US-GuyNeural"),
+    edgetts.WithVoice("zh-CN-XiaoxiaoNeural"),
     edgetts.WithRate("+10%"),
 )
 
-data, err := client.Bytes(context.Background(), "This is a reusable client example.")
+data, err := client.Bytes(context.Background(), "这是一段可复用 client 的示例。")
 ```
 
-## Runnable demo
+## 可运行 demo
 
-A runnable demo is included in this repository:
+仓库内提供了一个可直接运行的 demo：
 
 ```bash
-go run ./cmd/demo -text "hello world" -voice en-US-GuyNeural -output hello.mp3
+go run ./cmd/demo -text "你好，世界" -voice zh-CN-XiaoxiaoNeural -output hello.mp3
 ```
 
-Write to a file through streaming output:
+使用流式输出写文件：
 
 ```bash
 go run ./cmd/demo -text "hello world" -voice en-US-GuyNeural -output hello.mp3 -stream
 ```
 
-Use SSML input:
+使用 SSML：
 
 ```bash
 go run ./cmd/demo -type ssml -text '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><voice name="en-US-GuyNeural"><prosody rate="+10%">hello world</prosody></voice></speak>' -output hello.mp3
 ```
 
-If `-output` is omitted, the demo generates audio in memory and prints the byte size.
+如果不传 `-output`，demo 会在内存中生成音频并打印字节数。
 
-## Package-level convenience API
+## 包级便捷 API
 
-Best for one-off calls.
+适合一次性调用。
 
-### Text to bytes
+### 文本转 bytes
 
 ```go
 data, err := edgetts.Bytes(
@@ -98,20 +98,20 @@ data, err := edgetts.Bytes(
 )
 ```
 
-### SSML to bytes
+### SSML 转 bytes
 
 ```go
 ssml := `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><voice name="en-US-GuyNeural"><prosody rate="+10%">hello world</prosody></voice></speak>`
 data, err := edgetts.BytesSSML(ctx, ssml)
 ```
 
-### Text directly to file
+### 文本直接保存到文件
 
 ```go
 err := edgetts.Save(ctx, "hello world", "hello.mp3", edgetts.WithVoice("en-US-GuyNeural"))
 ```
 
-### SSML directly to file
+### SSML 直接保存到文件
 
 ```go
 err := edgetts.SaveSSML(ctx, ssml, "hello.mp3")
@@ -119,9 +119,9 @@ err := edgetts.SaveSSML(ctx, ssml, "hello.mp3")
 
 ## Client API
 
-Best for reusable defaults, service-side usage, and batch workflows.
+适合复用默认配置、服务端场景和批量任务。
 
-### Create a reusable client
+### 创建一个可复用 client
 
 ```go
 client := edgetts.New(
@@ -130,7 +130,7 @@ client := edgetts.New(
 )
 ```
 
-### Text / SSML with explicit request objects
+### 使用显式 Request 处理 Text / SSML
 
 ```go
 textReq := edgetts.Text("hello world", edgetts.WithVoice("en-US-GuyNeural"))
@@ -143,23 +143,23 @@ _ = textData
 _ = ssmlData
 ```
 
-## Output shapes
+## 输出方式
 
-### Write text to an `io.Writer`
+### 写入 `io.Writer`
 
 ```go
 var buf bytes.Buffer
 _, err := client.WriteTo(ctx, "hello world", &buf)
 ```
 
-### Write SSML to an `io.Writer`
+### 将 SSML 写入 `io.Writer`
 
 ```go
 var buf bytes.Buffer
 _, err := client.WriteSSMLTo(ctx, ssml, &buf)
 ```
 
-### Stream text audio
+### 流式输出文本音频
 
 ```go
 stream, err := client.Stream(ctx, "hello world")
@@ -171,7 +171,7 @@ defer stream.Close()
 _, err = io.Copy(w, stream)
 ```
 
-### Stream SSML audio
+### 流式输出 SSML 音频
 
 ```go
 stream, err := client.StreamSSML(ctx, ssml)
@@ -183,7 +183,7 @@ defer stream.Close()
 _, err = io.Copy(w, stream)
 ```
 
-### Stream directly in an HTTP handler
+### 在 HTTP handler 中直接流式返回
 
 ```go
 client := edgetts.New(edgetts.WithVoice("en-US-GuyNeural"))
@@ -201,76 +201,76 @@ http.HandleFunc("/tts", func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
-### Save SSML directly to file
+### 直接保存 SSML 到文件
 
 ```go
 err := client.SaveSSML(ctx, ssml, "speech.mp3")
 ```
 
-## Batch
+## 批量处理
 
-### Save batch into a directory
+### 批量保存到目录
 
 ```go
 results, err := client.SaveBatch(ctx, "out", []edgetts.BatchItem{
-    {Name: "a.mp3", Request: edgetts.Text("hello", edgetts.WithVoice("en-US-GuyNeural"))},
-    {Name: "b.mp3", Request: edgetts.Text("welcome", edgetts.WithVoice("en-US-JennyNeural"))},
+    {Name: "a.mp3", Request: edgetts.Text("你好", edgetts.WithVoice("zh-CN-XiaoxiaoNeural"))},
+    {Name: "b.mp3", Request: edgetts.Text("hello", edgetts.WithVoice("en-US-GuyNeural"))},
 })
 ```
 
-Each `BatchResult` contains:
+每个 `BatchResult` 包含：
 
 - `Name`
 - `Bytes`
 - `N`
 - `Err`
 
-### Write batch into a zip file
+### 批量写入 ZIP
 
 ```go
 f, _ := os.Create("tts.zip")
 defer f.Close()
 
 err := client.WriteZIP(ctx, f, []edgetts.BatchItem{
-    {Name: "a.mp3", Request: edgetts.Text("hello", edgetts.WithVoice("en-US-GuyNeural"))},
+    {Name: "a.mp3", Request: edgetts.Text("你好", edgetts.WithVoice("zh-CN-XiaoxiaoNeural"))},
     {Name: "b.mp3", Request: edgetts.SSML(ssml)},
 }, map[string]any{"source": "demo"})
 ```
 
 ## Voices
 
-### List voices
+### 获取 voice 列表
 
 ```go
 voices, err := client.Voices(ctx)
 ```
 
-### Filter voices
+### 筛选 voice
 
 ```go
 matches := edgetts.FilterVoices(voices, edgetts.VoiceFilter{
-    Locale: "en-US",
+    Locale: "zh-CN",
     Gender: "Female",
 })
 ```
 
-### Find the first matching voice
+### 查找第一个匹配的 voice
 
 ```go
 voice, err := client.FindVoice(ctx, edgetts.VoiceFilter{
-    ShortName: "en-US-GuyNeural",
+    ShortName: "zh-CN-XiaoxiaoNeural",
 })
 ```
 
-## Runnable demo flags
+## Demo 参数
 
 ```bash
 go run ./cmd/demo -h
 ```
 
-Main flags:
+主要参数：
 
-- `-type` (`text` or `ssml`)
+- `-type`（`text` 或 `ssml`）
 - `-text`
 - `-output`
 - `-voice`
@@ -279,26 +279,26 @@ Main flags:
 - `-volume`
 - `-stream`
 
-## Migration guide
+## 迁移指南
 
-The old `Speech` API still works, but it is no longer the recommended entry point.
+旧 `Speech` API 仍然可用，但不再推荐作为新入口。
 
-| Old usage | New usage |
+| 旧用法 | 新用法 |
 | --- | --- |
 | `NewSpeech(opts...)` | `client := edgetts.New(opts...)` |
 | `speech.AddSingleTask(text, w); speech.StartTasks()` | `client.WriteTo(ctx, text, w)` |
 | `speech.AddSingleTask(text, file); speech.StartTasks()` | `client.Save(ctx, text, path)` |
 | `speech.GetVoiceList()` | `client.Voices(ctx)` |
-| `AddPackTask(...)` | `client.SaveBatch(...)` or `client.WriteZIP(...)` |
-| Text tasks with per-call options | `client.Do(edgetts.Text(...))` |
-| SSML advanced flows | `client.Do(edgetts.SSML(...))` or `client.StreamSSML(...)` |
+| `AddPackTask(...)` | `client.SaveBatch(...)` 或 `client.WriteZIP(...)` |
+| 文本任务 + 每次调用单独配置 | `client.Do(edgetts.Text(...))` |
+| SSML 高级场景 | `client.Do(edgetts.SSML(...))` 或 `client.StreamSSML(...)` |
 
-### Migration example
+### 迁移示例
 
-Old:
+旧写法：
 
 ```go
-speech, err := edgetts.NewSpeech(edgetts.WithVoice("en-US-GuyNeural"))
+speech, err := edgetts.NewSpeech(edgetts.WithVoice("zh-CN-XiaoxiaoNeural"))
 if err != nil {
     panic(err)
 }
@@ -309,7 +309,7 @@ if err != nil {
 }
 defer file.Close()
 
-if err := speech.AddSingleTask("hello world", file); err != nil {
+if err := speech.AddSingleTask("你好，世界", file); err != nil {
     panic(err)
 }
 if err := speech.StartTasks(); err != nil {
@@ -317,20 +317,20 @@ if err := speech.StartTasks(); err != nil {
 }
 ```
 
-New:
+新写法：
 
 ```go
-client := edgetts.New(edgetts.WithVoice("en-US-GuyNeural"))
-if err := client.Save(context.Background(), "hello world", "hello.mp3"); err != nil {
+client := edgetts.New(edgetts.WithVoice("zh-CN-XiaoxiaoNeural"))
+if err := client.Save(context.Background(), "你好，世界", "hello.mp3"); err != nil {
     panic(err)
 }
 ```
 
-## Legacy compatibility
+## 兼容说明
 
-The old `Speech` task API still exists as a compatibility wrapper, but new code should prefer `Client` and the package-level helpers.
+旧 `Speech` task API 仍作为兼容包装层存在，但新代码应优先使用 `Client` 和包级便捷函数。
 
-## References
+## 参考
 
 - https://github.com/rany2/edge-tts
 - https://github.com/surfaceyu/edge-tts-go
@@ -339,7 +339,7 @@ The old `Speech` task API still exists as a compatibility wrapper, but new code 
 - https://gist.github.com/czyt/a2d83de838c9b65ab14fc18136f53bc6
 - https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-synthesis-markup-voice
 
-## Notes
+## 说明
 
-- `Speech` is still available for compatibility, but new integrations should use `Client`.
-- Real network synthesis depends on the upstream Edge TTS endpoint behavior.
+- `Speech` 仍然保留用于兼容，但新集成建议使用 `Client`。
+- 实际网络合成效果依赖上游 Edge TTS 服务行为。
