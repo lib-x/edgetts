@@ -3,7 +3,6 @@ package ttsTask
 import (
 	"github.com/lib-x/edgetts/internal/communicate"
 	"io"
-	"log"
 	"sync"
 )
 
@@ -23,8 +22,7 @@ func (t *SingleTask) Start(wg *sync.WaitGroup) error {
 		return err
 	}
 	if closer, ok := t.Output.(io.Closer); ok {
-		log.Print("ttsTask.Start: close output writer\r\n")
-		closer.Close()
+		_ = closer.Close()
 	}
 	return nil
 }

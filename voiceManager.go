@@ -1,16 +1,18 @@
 package edgetts
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/lib-x/edgetts/internal/businessConsts"
 	"net/http"
 	"sync"
+
+	"github.com/lib-x/edgetts/internal/businessConsts"
 )
 
 var (
 	getVoiceHeader http.Header
-	headerOnce     = &sync.Once{}
+	theaderOnce    = &sync.Once{}
 )
 
 type Voice struct {
@@ -24,36 +26,43 @@ type Voice struct {
 	Language       string
 	VoiceTag       VoiceTag `json:"VoiceTag"`
 }
+
 type VoiceTag struct {
 	ContentCategories  []string `json:"ContentCategories"`
 	VoicePersonalities []string `json:"VoicePersonalities"`
 }
 
 type VoiceManager struct {
+	client *http.Client
 }
 
 func NewVoiceManager() *VoiceManager {
-	headerOnce.Do(func() {
+	theaderOnce.Do(func() {
 		getVoiceHeader = makeVoiceListRequestHeader()
 	})
-	return &VoiceManager{}
+	return &VoiceManager{client: &http.Client{}}
 }
 
 func (m *VoiceManager) ListVoices() ([]Voice, error) {
-	client := http.Client{}
-	req, err := http.NewRequest("GET", businessConsts.VoiceListEndpoint, nil)
+	return m.ListVoicesContext(context.Background())
+}
+
+func (m *VoiceManager) ListVoicesContext(ctx context.Context) ([]Voice, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, businessConsts.VoiceListEndpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create voice list request: %w", err)
 	}
-	req.Header = getVoiceHeader
-	resp, err := client.Do(req)
+	req.Header = getVoiceHeader.Clone()
+
+	resp, err := m.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("request voices: %w", err)
 	}
 	defer resp.Body.Close()
+
 	var voices []Voice
-	if err = json.NewDecoder(resp.Body).Decode(&voices); err != nil {
-		return nil, err
+	if err := json.NewDecoder(resp.Body).Decode(&voices); err != nil {
+		return nil, fmt.Errorf("decode voices: %w", err)
 	}
 	return voices, nil
 }

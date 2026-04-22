@@ -29,10 +29,12 @@ func (c *CommunicateOption) CheckAndApplyDefaultOption() {
 	// try auto fill voiceLangRegion
 	if c.VoiceLangRegion == "" {
 		voiceParsed := strings.Split(c.Voice, "-")
-		lang := voiceParsed[0]
-		region := voiceParsed[1]
-		name := voiceParsed[2]
-		c.VoiceLangRegion = fmt.Sprintf(businessConsts.VoiceNameTemplate, lang, region, name)
+		if len(voiceParsed) >= 3 {
+			lang := voiceParsed[0]
+			region := voiceParsed[1]
+			name := voiceParsed[2]
+			c.VoiceLangRegion = fmt.Sprintf(businessConsts.VoiceNameTemplate, lang, region, name)
+		}
 	}
 	if c.Pitch == "" {
 		c.Pitch = "+0Hz"

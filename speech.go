@@ -1,140 +1,110 @@
 package edgetts
 
 import (
-	"errors"
-	"github.com/lib-x/edgetts/internal/communicate"
-	"github.com/lib-x/edgetts/internal/communicateOption"
-	"github.com/lib-x/edgetts/internal/ttsTask"
+	"context"
 	"io"
-	"sync"
 )
 
-var (
-	NoPackTaskEntries = errors.New("no pack task entries")
-)
-
+// Speech is a compatibility wrapper around Client.
+//
+// Deprecated: prefer Client and the package-level helper functions.
 type Speech struct {
-	vm      *VoiceManager
-	options []Option
-	tasks   []ttsTask.Tasker
+	client *Client
+	items  []speechTask
 }
 
-func (s *Speech) convertToInternalOpt() *communicateOption.CommunicateOption {
-	opt := &option{}
-	for _, apply := range s.options {
-		apply(opt)
-	}
-	return opt.toInternalOption()
-
+type speechTask interface {
+	run(context.Context, *Client) error
 }
 
-// NewSpeech creates a new Speech instance.
-// It takes a variadic parameter:
-// - options: a slice of communicateOption.Option that will be used to configure the Speech instance.
-// The function returns a pointer to the newly created Speech instance and an error if any occurs during the creation process.
-func NewSpeech(options ...Option) (*Speech, error) {
-	s := &Speech{
-		options: options,
-		tasks:   make([]ttsTask.Tasker, 0),
-		vm:      NewVoiceManager(),
-	}
-	return s, nil
+type singleSpeechTask struct {
+	request Request
+	output  io.Writer
+}
+
+func (t singleSpeechTask) run(ctx context.Context, client *Client) error {
+	_, err := client.WriteRequestTo(ctx, t.request, t.output)
+	return err
+}
+
+type packSpeechTask struct {
+	items []BatchItem
+	write func(context.Context, *Client) error
+}
+
+func (t packSpeechTask) run(ctx context.Context, client *Client) error {
+	return t.write(ctx, client)
 }
 
 // GetVoiceList retrieves the list of voices available for the speech.
-// It returns a slice of Voice objects and an error if any occurs during the retrieval process.
+//
+// Deprecated: prefer Client.Voices.
 func (s *Speech) GetVoiceList() ([]Voice, error) {
-	return s.vm.ListVoices()
+	return s.client.Voices(context.Background())
 }
 
 // AddSingleTask adds a single task to the speech.
-// It takes two parameters:
-// - text: the text to be synthesized.
-// - output: the output of the single task, which will finally be written into a file.
-// The function returns an error if there is an issue with the communication.
+//
+// Deprecated: prefer Client.WriteTo, Client.Save, or Client.Do.
 func (s *Speech) AddSingleTask(text string, output io.Writer) error {
-	opt := s.convertToInternalOpt()
-	c, err := communicate.NewCommunicate(text, opt)
-	if err != nil {
-		return err
-	}
-	task := &ttsTask.SingleTask{
-		Text:        text,
-		Communicate: c,
-		Output:      output,
-	}
-	s.tasks = append(s.tasks, task)
+	s.items = append(s.items, singleSpeechTask{request: Text(text), output: output})
 	return nil
 }
 
 // AddPackTask adds a pack task to the speech.
-// It takes four parameters:
-// - dataEntries: a map where the key is the entry name and the value is the entry text to be synthesized.
-// - entryCreator: a function that creates a writer for each entry. This can be a packer context related writer, such as a zip writer.
-// - output: the output of the pack task, which will finally be written into a file.
-// - metaData: optional parameter. It is the data which will be serialized into a json file. The name uses the key and value as the key-value pair.
-// The function returns an error if there are no pack task entries.
+//
+// Deprecated: prefer Client.SaveBatch or Client.WriteZIP.
 func (s *Speech) AddPackTask(dataEntries map[string]string, entryCreator func(name string) (io.Writer, error), output io.Writer, metaData ...map[string]any) error {
 	return s.AddPackTaskWithCustomOptions(dataEntries, nil, entryCreator, output, metaData...)
 }
 
-// AddPackTaskWithCustomOptions adds a pack task with options to the speech.
-// It takes four parameters:
-// - dataEntries: a map where the key is the entry name and the value is the entry text to be synthesized.
-// - entriesOption: a map where the key is the entry name and the value is the entry option to be used for the entry.
-// - entryCreator: a function that creates a writer for each entry. This can be a packer context related writer, such as a zip writer.
-// - output: the output of the pack task, which will finally be written into a file.
-// - metaData: optional parameter. It is the data which will be serialized into a json file. The name uses the key and value as the key-value pair.
-// The function returns an error if there are no pack task entries.
+// AddPackTaskWithCustomOptions adds a pack task with custom options.
+//
+// Deprecated: prefer Client.SaveBatch or Client.WriteZIP.
 func (s *Speech) AddPackTaskWithCustomOptions(dataEntries map[string]string, entriesOption map[string][]Option, entryCreator func(name string) (io.Writer, error), output io.Writer, metaData ...map[string]any) error {
-	taskCount := len(dataEntries)
-	if taskCount == 0 {
-		return NoPackTaskEntries
+	if len(dataEntries) == 0 {
+		return ErrBatchEmpty
 	}
-	packEntries := make([]*ttsTask.PackEntry, 0, taskCount)
+
+	items := make([]BatchItem, 0, len(dataEntries))
 	for name, text := range dataEntries {
-		// empty text will cause goroutine leak,ignore it
-		if text == "" {
-			continue
-		}
-		packEntry := &ttsTask.PackEntry{
-			Text:      text,
-			EntryName: name,
-		}
-		if entriesOption != nil {
-			if entryOpt, ok := entriesOption[name]; ok {
-				opt := &option{}
-				for _, apply := range entryOpt {
-					apply(opt)
-				}
-				packEntry.EntryCommunicateOpt = opt.toInternalOption()
+		items = append(items, BatchItem{Name: name, Request: Text(text, entriesOption[name]...)})
+	}
+
+	task := packSpeechTask{items: items, write: func(ctx context.Context, client *Client) error {
+		for _, item := range items {
+			writer, err := entryCreator(item.Name)
+			if err != nil {
+				return err
 			}
-
+			if _, err := client.WriteRequestTo(ctx, item.Request, writer); err != nil {
+				return err
+			}
 		}
-		packEntries = append(packEntries, packEntry)
-	}
+		for _, meta := range metaData {
+			writer, err := entryCreator("metadata.json")
+			if err != nil {
+				return err
+			}
+			if err := writeJSON(writer, meta); err != nil {
+				return err
+			}
+		}
+		return nil
+	}}
 
-	packTask := &ttsTask.PackTask{
-		CommunicateOpt:   s.convertToInternalOpt(),
-		PackEntryCreator: entryCreator,
-		PackEntries:      packEntries,
-		Output:           output,
-		MetaData:         metaData,
-	}
-	s.tasks = append(s.tasks, packTask)
+	s.items = append(s.items, task)
 	return nil
 }
 
-// StartTasks starts all the tasks in the Speech instance.
-// It creates a WaitGroup and adds the total number of tasks to it.
-// Then it starts each task in a separate goroutine and waits for all of them to finish.
-// The function returns an error if any occurs during the execution of the tasks.
+// StartTasks starts all added tasks.
+//
+// Deprecated: prefer explicit Client calls.
 func (s *Speech) StartTasks() error {
-	wg := &sync.WaitGroup{}
-	wg.Add(len(s.tasks))
-	for _, task := range s.tasks {
-		go task.Start(wg)
+	for _, item := range s.items {
+		if err := item.run(context.Background(), s.client); err != nil {
+			return err
+		}
 	}
-	wg.Wait()
 	return nil
 }

@@ -3,20 +3,27 @@ package communicate
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"sync"
+
 	"github.com/gorilla/websocket"
 	"github.com/lib-x/edgetts/internal/businessConsts"
 	"github.com/lib-x/edgetts/internal/communicateOption"
 	"github.com/lib-x/edgetts/internal/validate"
-	"io"
-	"log"
-	"net/http"
-	"sync"
 )
 
 const (
 	ssmlHeaderTemplate      = "X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n"
 	wordBoundaryOffset      = 8_750_000
 	binaryMessageHeaderSize = 2
+)
+
+type InputType int
+
+const (
+	InputText InputType = iota
+	InputSSML
 )
 
 var (
@@ -31,7 +38,8 @@ func init() {
 }
 
 type Communicate struct {
-	text string
+	inputType InputType
+	input     string
 
 	audioDataIndex int
 	prevIdx        int
@@ -45,15 +53,18 @@ type textEntry struct {
 	BoundaryType string `json:"BoundaryType"`
 	Length       int64  `json:"Length"`
 }
+
 type dataEntry struct {
 	Offset   int       `json:"Offset"`
 	Duration int       `json:"Duration"`
 	Text     textEntry `json:"text"`
 }
+
 type metaDataEntry struct {
 	Type string    `json:"Type"`
 	Data dataEntry `json:"Data"`
 }
+
 type metaDataContext struct {
 	Metadata []metaDataEntry `json:"Metadata"`
 }
@@ -79,7 +90,9 @@ type webSocketError struct {
 	Message string
 }
 
-func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Communicate, error) {
+var errNoAudioReceived = fmt.Errorf("no audio received")
+
+func NewCommunicate(inputType InputType, input string, opt *communicateOption.CommunicateOption) (*Communicate, error) {
 	if opt == nil {
 		opt = &communicateOption.CommunicateOption{}
 	}
@@ -89,29 +102,57 @@ func NewCommunicate(text string, opt *communicateOption.CommunicateOption) (*Com
 		return nil, err
 	}
 	return &Communicate{
-		text: text,
-		opt:  opt,
+		inputType: inputType,
+		input:     input,
+		opt:       opt,
 	}, nil
 }
 
-// WriteStreamTo  write audio stream to io.WriteCloser
-func (c *Communicate) WriteStreamTo(rc io.Writer) error {
-	ctx, cancel := context.WithCancel(context.Background())
+// WriteStreamTo writes audio to w using a background context.
+func (c *Communicate) WriteStreamTo(w io.Writer) error {
+	_, err := c.WriteStreamToContext(context.Background(), w)
+	return err
+}
+
+// WriteStreamToContext writes audio to w and returns written bytes.
+func (c *Communicate) WriteStreamToContext(ctx context.Context, w io.Writer) (int64, error) {
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	output, err := c.stream(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
+	var written int64
 	for payload := range output {
+		if errVal, ok := payload["error"]; ok {
+			switch v := errVal.(type) {
+			case webSocketError:
+				return written, fmt.Errorf("websocket error: %s", v.Message)
+			case unknownResponse:
+				return written, fmt.Errorf("unknown response: %s", v.Message)
+			case unexpectedResponse:
+				return written, fmt.Errorf("unexpected response: %s", v.Message)
+			case noAudioReceived:
+				return written, fmt.Errorf("%w: %s", errNoAudioReceived, v.Message)
+			default:
+				return written, fmt.Errorf("stream error: %v", v)
+			}
+		}
 		if t, isTypedData := payload["type"]; isTypedData && t == "audio" {
-			if data, ok := payload["data"].(audioData); ok {
-				rc.Write(data.Data)
+			data, ok := payload["data"].(audioData)
+			if !ok {
+				continue
+			}
+			n, err := w.Write(data.Data)
+			written += int64(n)
+			if err != nil {
+				return written, fmt.Errorf("write audio payload: %w", err)
 			}
 		}
 	}
-	return nil
+	return written, nil
 }
 
 func makeDefaultHeaders() http.Header {
@@ -129,16 +170,6 @@ func makeDefaultHeaders() http.Header {
 }
 
 func (c *Communicate) sendSpeechGenerationConfig(conn *websocket.Conn, currentTime string) error {
-	// Prepare the request to be sent to the service.
-	//
-	// Note sentenceBoundaryEnabled and wordBoundaryEnabled are actually supposed
-	// to be booleans, but Edge Browser seems to send them as strings.
-	//
-	// This is a bug in Edge as Azure Cognitive Services actually sends them as
-	// bool and not string. For now I will send them as bool unless it causes
-	// any problems.
-	//
-	// Also pay close attention to double { } in request (escape for f-string).
 	return conn.WriteMessage(websocket.TextMessage, []byte(
 		"X-Timestamp:"+currentTime+"\r\n"+
 			"Content-Type:application/json; charset=utf-8\r\n"+
@@ -148,22 +179,17 @@ func (c *Communicate) sendSpeechGenerationConfig(conn *websocket.Conn, currentTi
 }
 
 func (c *Communicate) sendSSML(conn *websocket.Conn, currentTime string, text []byte) error {
+	payload := string(text)
+	if c.inputType == InputText {
+		payload = makeSsml(string(text), c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume)
+	}
 	return conn.WriteMessage(websocket.TextMessage,
-		[]byte(
-			appendRequestContextToSsmlHeaders(
-				generateConnectID(),
-				currentTime,
-				makeSsml(string(text), c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
-			),
-		))
+		[]byte(appendRequestContextToSsmlHeaders(generateConnectID(), currentTime, payload)))
 }
 
 func (c *Communicate) stream(ctx context.Context) (chan map[string]interface{}, error) {
 	output := make(chan map[string]interface{})
-	texts := splitTextByByteLength(
-		escape(removeIncompatibleCharacters(c.text)),
-		getMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
-	)
+	texts := c.buildPayloads()
 	c.audioDataIndex = len(texts)
 	c.finalUtterance = make(map[int]int)
 	c.prevIdx = -1
@@ -177,20 +203,18 @@ func (c *Communicate) stream(ctx context.Context) (chan map[string]interface{}, 
 				c.applyWebSocketProxyIfSet(&dialer)
 				conn, _, err := dialer.Dial(wsURL, communicateHeader)
 				if err != nil {
-					output <- map[string]interface{}{
-						"error": webSocketError{Message: err.Error()},
-					}
+					output <- map[string]interface{}{"error": webSocketError{Message: err.Error()}}
 					return
 				}
 				defer conn.Close()
+
 				currentTime := currentTimeInMST()
-				err = c.sendSpeechGenerationConfig(conn, currentTime)
-				if err != nil {
-					log.Println("sendSpeechGenerationConfig error:", err)
+				if err := c.sendSpeechGenerationConfig(conn, currentTime); err != nil {
+					output <- map[string]interface{}{"error": unexpectedResponse{Message: err.Error()}}
 					return
 				}
-				if err = c.sendSSML(conn, currentTime, text); err != nil {
-					log.Println("sendSSML error:", err)
+				if err := c.sendSSML(conn, currentTime, text); err != nil {
+					output <- map[string]interface{}{"error": unexpectedResponse{Message: err.Error()}}
 					return
 				}
 				c.connStreamExchange(ctx, conn, output, idx)
@@ -201,32 +225,42 @@ func (c *Communicate) stream(ctx context.Context) (chan map[string]interface{}, 
 	return output, nil
 }
 
-func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Conn, output chan map[string]interface{}, idx int) {
-	// download indicates whether we should be expecting audio data,
-	// this is so what we avoid getting binary data from the websocket
-	// and falsely thinking it's audio data.
-	downloadAudio := false
+func (c *Communicate) buildPayloads() [][]byte {
+	switch c.inputType {
+	case InputSSML:
+		return [][]byte{[]byte(c.input)}
+	default:
+		return splitTextByByteLength(
+			escape(removeIncompatibleCharacters(c.input)),
+			getMaxMessageSize(c.opt.Pitch, c.opt.Voice, c.opt.Rate, c.opt.Volume),
+		)
+	}
+}
 
-	// audioWasReceived indicates whether we have received audio data
-	// from the websocket. This is so we can raise an exception if we
-	// don't receive any audio data.
+func (c *Communicate) connStreamExchange(ctx context.Context, conn *websocket.Conn, output chan map[string]interface{}, idx int) {
+	downloadAudio := false
 	audioWasReceived := false
 
 	for {
 		select {
 		case <-ctx.Done():
 			if !audioWasReceived {
-				log.Println("No audio was received. Please verify that your parameters are correct.")
+				output <- map[string]interface{}{"error": noAudioReceived{Message: "context cancelled before audio was received"}}
 			}
 			return
 		default:
 			msgType, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Println("read message from conn err", err)
+				if !audioWasReceived {
+					output <- map[string]interface{}{"error": webSocketError{Message: err.Error()}}
+				}
 				return
 			}
 			continueProcessing := c.handleWebSocketMessage(msgType, message, output, idx, &downloadAudio, &audioWasReceived)
 			if !continueProcessing {
+				if !audioWasReceived {
+					output <- map[string]interface{}{"error": noAudioReceived{Message: "no audio data returned by service"}}
+				}
 				return
 			}
 		}
